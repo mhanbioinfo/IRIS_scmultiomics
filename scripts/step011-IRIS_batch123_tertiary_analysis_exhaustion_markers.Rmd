@@ -1,0 +1,626 @@
+---
+title: "step011-IRIS_batch123_tertiary_analysis_exhaustion_markers"
+author: "Ming"
+date: "`r format(Sys.time(), '%Y_%m_%d_%H_%M')`"
+---
+
+```{r setup, include=FALSE}
+# knitr::opts_chunk$set(eval = FALSE)      ## no run
+# knitr::opts_chunk$set(include = FALSE)   ## yes run, no code, no output
+knitr::opts_chunk$set(echo = TRUE)         ## yes run, no code, yes output ( for figures )
+knitr::opts_chunk$set(results = 'hide')    ## yes run, yes code, no output
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(warning = FALSE)
+suppressPackageStartupMessages(library(tidyverse))
+suppressPackageStartupMessages(library(ggplot2))
+'%ni%' = Negate('%in%')
+# options(scipen = 999)       # decimals
+# options(scipen = 0)         # sci notation
+# options(max.print=999999)
+
+dir.ref                 = "/Users/minghan/bioinfoproj/references"
+dir.clin                = "/Users/minghan/GDrive_minghanpughlab/PughLabPMH/_projects/IRIS/_clin"
+dir.data                = "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/data"
+dir.out.data            = "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/out_data"
+dir.out.figure.analysis = "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/out_figures_analysis"
+dir.out.figure.qc       = "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/out_figures_qc"
+
+PROJ = "IRIS"
+PROJ_BATCH = "IRIS_batch123"
+
+colours_n40 = 
+  c("dodgerblue2", "#E31A1C", "green4", "#6A3D9A", "#FF7F00", 
+    "gold1", "gray70", "#C1645C", "skyblue2", "#FB9A99", "palegreen2", 
+    "#CAB2D6", "#FDBF6F", "#D46A43", "khaki2", "maroon", 
+    "orchid1", "deeppink1", "blue1", "steelblue4", "darkturquoise", 
+    "green1", "yellow4", "yellow3", "darkorange4", "brown",
+    "#5C9A5C", "#CC8BAD", "#B8782A", "#546C9D", "#459E6F",
+    
+    "chocolate4", "chartreuse4", "burlywood", "deeppink4", "lightslateblue",
+    "firebrick", "mintcream", "mediumpurple3", "springgreen4", "slateblue4", "pink")
+
+library(Seurat)
+```
+
+# readRDS()
+
+## all cells
+
+```{r}
+crescent.seurat.obj.singleR.encode.scmulti = readRDS(file.path(dir.out.data, paste0(PROJ_BATCH, ".crescent.seurat.obj.singleR.encode.all_metadata_attached.Rds")))
+crescent.seurat.obj.singleR.encode.scmulti@meta.data %>% dplyr::select(dataset, Community_specificity_lean2) %>% table()
+#                 Community_specificity_lean2
+# dataset          no_GLIPHII_results tumor_associated_HomoSapiens tumor_associated_HomoSapiens_MDavis tumor_associated_MDavis viral_or_nonspecific
+#   IRS_0004_A_003               2980                            0                                   5                      44                  123
+#   IRS_0014_P_014               1507                            0                                   0                       6                    6
+#   IRS_002_A_001                3514                            0                                   4                      84                  238
+#   IRS_0023_P_023              10020                            1                                  35                     160                  130
+#   IRS_0025_A_025                371                            0                                   1                       7                    3
+#   IRS_0032_A_032                878                            0                                  15                       7                    7
+#   IRS_0038_P_038               7772                            0                                  28                      74                   51
+#   IRS_0055_P_055               7146                            1                                  24                     185                  105
+#   IRS_0056_P_056                925                            0                                   4                      18                    9
+#   IRS_008_P_008                 212                            0                                   1                       8                   14
+#   IRS_015_A_015                8793                            0                                 200                     127                  121
+```
+
+## T cells re-integrated
+
+```{r}
+crescent.seurat.obj.T_cells.integrated.no_gdT = readRDS(file.path(dir.out.data, paste0(PROJ_BATCH, ".crescent.seurat.obj.T_cells.integrated.no_gdT.annotated.Rds")))
+crescent.seurat.obj.T_cells.integrated.no_gdT # 34884 features across 12980 samples within 3 assays 
+
+## attach metadata
+crescent.seurat.obj.T_cells.integrated.no_gdT.meta.data = crescent.seurat.obj.T_cells.integrated.no_gdT@meta.data
+crescent.seurat.obj.T_cells.integrated.no_gdT@meta.data = 
+  crescent.seurat.obj.singleR.encode.scmulti@meta.data %>% 
+  dplyr::filter(rownames(.) %in% (crescent.seurat.obj.T_cells.integrated.no_gdT@meta.data %>% rownames())) %>% 
+  mutate(dataset = factor(dataset, levels = c("IRS_0004_A_003", "IRS_002_A_001", "IRS_0025_A_025", "IRS_0032_A_032", "IRS_015_A_015", 
+                                              "IRS_0014_P_014", "IRS_0023_P_023", "IRS_0038_P_038", "IRS_0055_P_055", "IRS_0056_P_056", "IRS_008_P_008")))
+crescent.seurat.obj.T_cells.integrated.no_gdT@meta.data
+```
+
+# --------------------------------------------
+
+# exhaustion markers
+
+## sample_order
+
+```{r}
+sample_order = 
+  c("IRS_0004_A_003", "IRS_002_A_001", "IRS_0025_A_025", "IRS_0032_A_032", "IRS_015_A_015", 
+    "IRS_0014_P_014", "IRS_0023_P_023", "IRS_0038_P_038", "IRS_0055_P_055", "IRS_0056_P_056", "IRS_008_P_008")
+
+sample_order.Tcell_num_gt500 = 
+  c("IRS_0004_A_003", "IRS_002_A_001", "IRS_015_A_015", 
+    "IRS_0023_P_023", "IRS_0038_P_038", "IRS_0055_P_055", "IRS_0056_P_056")
+```
+
+## markers
+
+```{r}
+immunomod.targets.genes.Tcell = 
+  c("PDCD1", "TIGIT", "CD96", "CD226", "LAG3", "CCR8", "HAVCR2", "CTLA4", "PVRIG") 
+immunomod.targets.genes.tumour = 
+  c("CD274", "PVR", "NECTIN2")
+
+CD226.specific.genes = 
+  c("CD226", "TIGIT", "PVRIG", "CD96", "NECTIN2", "PVR", "NECTIN3", "NECTIN1", "NECTIN4")
+
+markers_all = c("PDCD1", "TIGIT", "LAG3", "CD96", "CD274", "PVR", "PVRIG", "CD226", 
+                "HAVCR2", "CCR8", "NECTIN1", "NECTIN2", "NECTIN3", "NECTIN4")
+```
+
+## plots - all T cells
+
+### DotPlot()
+
+```{r}
+Seurat::DotPlot(object = crescent.seurat.obj.T_cells.integrated.no_gdT, 
+                features = immunomod.targets.genes.Tcell, 
+                assay = "SCT", 
+                group.by = "dataset",
+                cols = colours_n40) +
+  scale_y_discrete(limits = rev(sample_order)) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
+# ggsave(file.path(dir.out.figure.analysis, paste0(PROJ_BATCH, ".seurat.obj.exhaustMarkers.Tcells_all.DotPlot.allSamples_v2.png")), 
+#        device = "png", width = 6, height = 4, units = "in")
+
+Seurat::DotPlot(object = crescent.seurat.obj.T_cells.integrated.no_gdT, 
+                features = immunomod.targets.genes.Tcell, 
+                assay = "SCT", 
+                group.by = "dataset", 
+                cols = colours_n40) +
+  scale_y_discrete(limits = rev(sample_order.Tcell_num_gt500)) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
+# ggsave(file.path(dir.out.figure.analysis, paste0(PROJ_BATCH, ".seurat.obj.exhaustMarkers.Tcells_all.DotPlot.samplesTcells_gt500_v2.png")), 
+#        device = "png", width = 6, height = 4, units = "in")
+```
+
+### boxplot
+
+#### per cell
+
+```{r}
+crescent.seurat.obj.T_cells.integrated.no_gdT.metadata = crescent.seurat.obj.T_cells.integrated.no_gdT@meta.data
+crescent.seurat.obj.T_cells.integrated.no_gdT.metadata
+
+# crescent.seurat.obj.T_cells.integrated.no_gdT@meta.data = 
+#   crescent.seurat.obj.T_cells.integrated.no_gdT.metadata %>% 
+#   rownames_to_column(var="sample_barcode") %>% 
+#   left_join(., clin.df %>% mutate(Patient_ID = Patient_ID %>% gsub("-","_", .)), 
+#             by = c("dataset"="Patient_ID")) # %>% dplyr::filter(is.na(Deceased))
+
+crescent.seurat.obj.T_cells.integrated.no_gdT.SCTdata.im_target_genes_Tcell.df = 
+  crescent.seurat.obj.T_cells.integrated.no_gdT@assays$SCT@data[immunomod.targets.genes.Tcell, ] %>% data.frame()
+
+crescent.seurat.obj.T_cells.integrated.no_gdT.SCTdata.im_target_genes_Tcell.df2 = 
+  crescent.seurat.obj.T_cells.integrated.no_gdT.SCTdata.im_target_genes_Tcell.df %>% 
+  rownames_to_column(var="SYMBOL") %>% 
+  pivot_longer(cols = -SYMBOL, names_to = "sample_barcode", values_to = "SCTdata") %>% 
+  # mutate(sample = sample_barcode %>% gsub(".{17}$", "", .)) %>% 
+  left_join(., crescent.seurat.obj.T_cells.integrated.no_gdT@meta.data %>% rownames_to_column(var="sample_barcode"), by=c("sample_barcode"))
+crescent.seurat.obj.T_cells.integrated.no_gdT.SCTdata.im_target_genes_Tcell.df2
+
+crescent.seurat.obj.T_cells.integrated.no_gdT.SCTdata.im_target_genes_Tcell.df2 %>% 
+  ggplot(., aes(x = clin_ResistanceType, y = SCTdata)) + 
+	geom_boxplot(notch = F, outlier.shape = NA) + 
+  geom_jitter(shape=16, size=0.3, position=position_jitter(0.2)) +
+  ggpubr::stat_compare_means(method="wilcox", size = 3, comparisons=list(c(1,2))) +
+	scale_y_continuous(expand = expansion(mult = c(0.05, 0.2))) + 
+  facet_wrap( ~ SYMBOL, nrow = 3, scales = "free") +
+  theme_classic()
+# ggsave(file.path(dir.out.figure.analysis, paste0(PROJ_BATCH, ".seurat.obj.exhaustMarkers.Tcells_all.boxplot.allSamples_newREF.png")), 
+#        device = "png", width = 7, height = 7, units = "in", dpi = 300, bg = "white")
+
+## get means
+crescent.seurat.obj.T_cells.integrated.no_gdT.SCTdata.im_target_genes_Tcell.df2 %>% 
+  group_by(SYMBOL, clin_ResistanceType) %>% 
+  summarize(SCTdata_mean = mean(SCTdata)) %>% 
+  pivot_wider(id_cols = SYMBOL, names_from = "clin_ResistanceType", values_from = "SCTdata_mean") %>% 
+  print.data.frame()
+#   SYMBOL   Acquired   Primary
+# 1   CCR8 0.06983218 0.1489022
+# 2  CD226 0.20084178 0.2071352
+# 3   CD96 0.97152595 1.0063079
+# 4  CTLA4 0.57313144 0.7610295
+# 5 HAVCR2 0.36941195 0.3013368
+# 6   LAG3 1.02780347 1.0469986
+# 7  PDCD1 0.47209279 0.4136221
+# 8  PVRIG 0.34282741 0.3152963
+# 9  TIGIT 0.73759765 0.8307842
+```
+
+#### pseudo-bulk
+
+```{r}
+crescent.seurat.obj.T_cells.integrated.no_gdT.SCTdata.im_target_genes_Tcell.df3 =
+  crescent.seurat.obj.T_cells.integrated.no_gdT.SCTdata.im_target_genes_Tcell.df2 %>% 
+  dplyr::group_by(dataset, SYMBOL) %>% 
+  summarise(SCTdata = mean(SCTdata)) %>% 
+  left_join(., 
+            crescent.seurat.obj.T_cells.integrated.no_gdT@meta.data %>% 
+              dplyr::select(dataset, starts_with("clin_")) %>% 
+              distinct() %>% remove_rownames(), 
+            by=c("dataset"))
+crescent.seurat.obj.T_cells.integrated.no_gdT.SCTdata.im_target_genes_Tcell.df3
+
+crescent.seurat.obj.T_cells.integrated.no_gdT.SCTdata.im_target_genes_Tcell.df3 %>% 
+  ggplot(., aes(x = clin_ResistanceType, y = SCTdata)) + 
+	geom_boxplot(notch = F, outlier.shape = NA) + 
+  geom_jitter(shape=16, size=0.3, position=position_jitter(0.2)) +
+  ggpubr::stat_compare_means(method="wilcox", size = 3, comparisons=list(c(1,2))) +
+	scale_y_continuous(expand = expansion(mult = c(0.05, 0.2))) + 
+  facet_wrap( ~ SYMBOL, nrow = 3, scales = "free") +
+  theme_classic()
+# ggsave(file.path(dir.out.figure.analysis, paste0(PROJ_BATCH, ".seurat.obj.exhaustMarkers.Tcells_all.boxplot.allSamples_newREF.png")), 
+#        device = "png", width = 7, height = 7, units = "in", dpi = 300, bg = "white")
+
+## get means
+crescent.seurat.obj.T_cells.integrated.no_gdT.SCTdata.im_target_genes_Tcell.df3 %>% 
+  group_by(SYMBOL, clin_ResistanceType) %>% 
+  summarize(SCTdata_mean = mean(SCTdata)) %>% 
+  pivot_wider(id_cols = SYMBOL, names_from = "clin_ResistanceType", values_from = "SCTdata_mean") %>% 
+  print.data.frame()
+#   SYMBOL  Acquired   Primary
+# 1   CCR8 0.1115888 0.1416402
+# 2  CD226 0.1872667 0.1933002
+# 3   CD96 0.9583865 0.9964493
+# 4  CTLA4 0.6978032 0.7239057
+# 5 HAVCR2 0.2750779 0.2409164
+# 6   LAG3 0.8353138 0.8006743
+# 7  PDCD1 0.4272648 0.3645690
+# 8  PVRIG 0.3296104 0.3390799
+# 9  TIGIT 0.7897905 0.6420451
+```
+
+## plots - tumor_assoc T cells
+
+```{r}
+crescent.seurat.obj.T_cells.integrated.no_gdT@meta.data$Community_specificity_lean2 %>% table()
+
+## tumor associated
+crescent.seurat.obj.T_cells.integrated.no_gdT.t_assoc = subset(crescent.seurat.obj.T_cells.integrated.no_gdT, subset = Community_specificity_lean == "tumor_associated")
+
+## Human
+crescent.seurat.obj.T_cells.integrated.no_gdT.human = subset(crescent.seurat.obj.T_cells.integrated.no_gdT, subset = Community_specificity_lean2 == "tumor_associated_HomoSapiens")
+crescent.seurat.obj.T_cells.integrated.no_gdT.human # 34884 features across 2 samples within 3 assays 
+
+## MDavis
+crescent.seurat.obj.T_cells.integrated.no_gdT.mdavis = subset(crescent.seurat.obj.T_cells.integrated.no_gdT, subset = Community_specificity_lean2 == "tumor_associated_MDavis")
+crescent.seurat.obj.T_cells.integrated.no_gdT.mdavis # 34884 features across 618 samples within 3 assays 
+
+## Human_MDavis
+crescent.seurat.obj.T_cells.integrated.no_gdT.human_mdavis = subset(crescent.seurat.obj.T_cells.integrated.no_gdT, subset = Community_specificity_lean2 == "tumor_associated_HomoSapiens_MDavis")
+crescent.seurat.obj.T_cells.integrated.no_gdT.human_mdavis # 34884 features across 249 samples within 3 assays 
+```
+
+### DotPlot()
+
+#### tumor associated
+
+```{r}
+Seurat::DotPlot(object = crescent.seurat.obj.T_cells.integrated.no_gdT.t_assoc, features = immunomod.targets.genes.Tcell, assay = "SCT", group.by = "dataset", cols = colours_n40) +
+  scale_y_discrete(limits = rev(sample_order)) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
+# ggsave(file.path(dir.out.figure.analysis, paste0(PROJ_BATCH, ".seurat.obj.exhaustMarkers.Tcells_tumour_assoc.DotPlot.allSamples_newREF.png")), 
+#        device = "png", width = 7, height = 4, units = "in")
+
+Seurat::DotPlot(object = crescent.seurat.obj.T_cells.integrated.no_gdT.t_assoc, features = immunomod.targets.genes.Tcell, assay = "SCT", group.by = "dataset", cols = colours_n40) +
+  scale_y_discrete(limits = rev(sample_order.Tcell_num_gt500)) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
+```
+
+#### MDavis
+
+```{r}
+Seurat::DotPlot(object = crescent.seurat.obj.T_cells.integrated.no_gdT.mdavis, features = immunomod.targets.genes.Tcell, assay = "SCT", group.by = "dataset", cols = colours_n40) +
+  scale_y_discrete(limits = rev(sample_order)) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
+# ggsave(file.path(dir.out.figure.analysis, paste0(PROJ_BATCH, ".seurat.obj.exhaustMarkers.Tcells_tumour_assoc.DotPlot.allSamples_newREF.png")), 
+#        device = "png", width = 7, height = 4, units = "in")
+
+Seurat::DotPlot(object = crescent.seurat.obj.T_cells.integrated.no_gdT.mdavis, features = immunomod.targets.genes.Tcell, assay = "SCT", group.by = "dataset", cols = colours_n40) +
+  scale_y_discrete(limits = rev(sample_order.Tcell_num_gt500)) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
+```
+
+#### Human_MDavis
+
+```{r}
+Seurat::DotPlot(object = crescent.seurat.obj.T_cells.integrated.no_gdT.human_mdavis, features = immunomod.targets.genes.Tcell, assay = "SCT", group.by = "dataset", cols = colours_n40) +
+  scale_y_discrete(limits = rev(sample_order)) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
+# ggsave(file.path(dir.out.figure.analysis, paste0(PROJ_BATCH, ".seurat.obj.exhaustMarkers.Tcells_tumour_assoc.DotPlot.allSamples_newREF.png")), 
+#        device = "png", width = 7, height = 4, units = "in")
+
+Seurat::DotPlot(object = crescent.seurat.obj.T_cells.integrated.no_gdT.human_mdavis, features = immunomod.targets.genes.Tcell, assay = "SCT", group.by = "dataset", cols = colours_n40) +
+  scale_y_discrete(limits = rev(sample_order.Tcell_num_gt500)) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
+```
+
+### boxplot
+
+#### per cell
+
+##### tumor associated
+
+```{r}
+crescent.seurat.obj.T_cells.integrated.no_gdT.SCTdata.im_target_genes_Tcell.tumour_assoc = 
+  crescent.seurat.obj.T_cells.integrated.no_gdT.SCTdata.im_target_genes_Tcell.df2 %>% 
+  dplyr::filter(sample_barcode %in% c(crescent.seurat.obj.T_cells.integrated.no_gdT.t_assoc@meta.data %>% rownames()))
+crescent.seurat.obj.T_cells.integrated.no_gdT.SCTdata.im_target_genes_Tcell.tumour_assoc$sample_barcode %>% unique() %>% length() # [1] 869
+
+crescent.seurat.obj.T_cells.integrated.no_gdT.SCTdata.im_target_genes_Tcell.tumour_assoc %>% 
+  ggplot(., aes(x = clin_ResistanceType, y = SCTdata)) + 
+	geom_boxplot(notch = F, outlier.shape = NA) + 
+  geom_jitter(shape=16, size=0.3, position=position_jitter(0.2)) +
+  ggpubr::stat_compare_means(method="wilcox", size = 3, comparisons=list(c(1,2))) +
+	scale_y_continuous(expand = expansion(mult = c(0.05, 0.2))) + 
+  facet_wrap( ~ SYMBOL, nrow = 3, scales = "free") +
+  theme_classic()
+# ggsave(file.path(dir.out.figure.analysis, paste0(PROJ_BATCH, ".seurat.obj.exhaustMarkers.Tcells_tumour_assoc.boxplot.allSamples_newREF.png")), 
+#        device = "png", width = 7, height = 7, units = "in", dpi = 300, bg = "white")
+
+## get means
+crescent.seurat.obj.T_cells.integrated.no_gdT.SCTdata.im_target_genes_Tcell.tumour_assoc %>% 
+  group_by(SYMBOL, clin_ResistanceType) %>% 
+  summarize(SCTdata_mean = mean(SCTdata)) %>% 
+  pivot_wider(id_cols = SYMBOL, names_from = "clin_ResistanceType", values_from = "SCTdata_mean")
+```
+
+##### MDavis
+
+```{r}
+crescent.seurat.obj.T_cells.integrated.no_gdT.SCTdata.im_target_genes_Tcell.mdavis = 
+  crescent.seurat.obj.T_cells.integrated.no_gdT.SCTdata.im_target_genes_Tcell.df2 %>% 
+  dplyr::filter(sample_barcode %in% c(crescent.seurat.obj.T_cells.integrated.no_gdT.mdavis@meta.data %>% rownames()))
+crescent.seurat.obj.T_cells.integrated.no_gdT.SCTdata.im_target_genes_Tcell.mdavis$sample_barcode %>% unique() %>% length() # [1] 618
+
+crescent.seurat.obj.T_cells.integrated.no_gdT.SCTdata.im_target_genes_Tcell.mdavis %>% 
+  ggplot(., aes(x = clin_ResistanceType, y = SCTdata)) + 
+	geom_boxplot(notch = F, outlier.shape = NA) + 
+  geom_jitter(shape=16, size=0.3, position=position_jitter(0.2)) +
+  ggpubr::stat_compare_means(method="wilcox", size = 3, comparisons=list(c(1,2))) +
+	scale_y_continuous(expand = expansion(mult = c(0.05, 0.2))) + 
+  facet_wrap( ~ SYMBOL, nrow = 3, scales = "free") +
+  theme_classic()
+# ggsave(file.path(dir.out.figure.analysis, paste0(PROJ_BATCH, ".seurat.obj.exhaustMarkers.Tcells_mdavis.boxplot.allSamples_newREF.png")), 
+#        device = "png", width = 7, height = 7, units = "in", dpi = 300, bg = "white")
+
+## get means
+crescent.seurat.obj.T_cells.integrated.no_gdT.SCTdata.im_target_genes_Tcell.mdavis %>% 
+  group_by(SYMBOL, clin_ResistanceType) %>% 
+  summarize(SCTdata_mean = mean(SCTdata)) %>% 
+  pivot_wider(id_cols = SYMBOL, names_from = "clin_ResistanceType", values_from = "SCTdata_mean")
+```
+
+##### Human_MDavis
+
+```{r}
+crescent.seurat.obj.T_cells.integrated.no_gdT.SCTdata.im_target_genes_Tcell.human_mdavis = 
+  crescent.seurat.obj.T_cells.integrated.no_gdT.SCTdata.im_target_genes_Tcell.df2 %>% 
+  dplyr::filter(sample_barcode %in% c(crescent.seurat.obj.T_cells.integrated.no_gdT.human_mdavis@meta.data %>% rownames()))
+crescent.seurat.obj.T_cells.integrated.no_gdT.SCTdata.im_target_genes_Tcell.human_mdavis$sample_barcode %>% unique() %>% length() # [1] 249
+
+crescent.seurat.obj.T_cells.integrated.no_gdT.SCTdata.im_target_genes_Tcell.human_mdavis %>% 
+  ggplot(., aes(x = clin_ResistanceType, y = SCTdata)) + 
+	geom_boxplot(notch = F, outlier.shape = NA) + 
+  geom_jitter(shape=16, size=0.3, position=position_jitter(0.2)) +
+  ggpubr::stat_compare_means(method="wilcox", size = 3, comparisons=list(c(1,2))) +
+	scale_y_continuous(expand = expansion(mult = c(0.05, 0.2))) + 
+  facet_wrap( ~ SYMBOL, nrow = 3, scales = "free") +
+  theme_classic()
+# ggsave(file.path(dir.out.figure.analysis, paste0(PROJ_BATCH, ".seurat.obj.exhaustMarkers.Tcells_human_mdavis.boxplot.allSamples_newREF.png")), 
+#        device = "png", width = 7, height = 7, units = "in", dpi = 300, bg = "white")
+
+## get means
+crescent.seurat.obj.T_cells.integrated.no_gdT.SCTdata.im_target_genes_Tcell.human_mdavis %>% 
+  group_by(SYMBOL, clin_ResistanceType) %>% 
+  summarize(SCTdata_mean = mean(SCTdata)) %>% 
+  pivot_wider(id_cols = SYMBOL, names_from = "clin_ResistanceType", values_from = "SCTdata_mean")
+```
+
+#### pseudo-bulk
+
+##### tumor associated
+
+```{r}
+crescent.seurat.obj.T_cells.integrated.no_gdT.SCTdata.im_target_genes_Tcell.tumour_assoc.pseudobulk =
+  crescent.seurat.obj.T_cells.integrated.no_gdT.SCTdata.im_target_genes_Tcell.df2 %>% 
+  dplyr::filter(sample_barcode %in% c(crescent.seurat.obj.T_cells.integrated.no_gdT.t_assoc@meta.data %>% rownames())) %>% 
+  dplyr::group_by(dataset, SYMBOL) %>% 
+  summarise(SCTdata = mean(SCTdata)) %>% 
+  left_join(., 
+            crescent.seurat.obj.T_cells.integrated.no_gdT@meta.data %>% 
+              dplyr::select(dataset, starts_with("clin_")) %>% 
+              distinct() %>% remove_rownames(), 
+            by=c("dataset"))
+crescent.seurat.obj.T_cells.integrated.no_gdT.SCTdata.im_target_genes_Tcell.tumour_assoc.pseudobulk
+
+crescent.seurat.obj.T_cells.integrated.no_gdT.SCTdata.im_target_genes_Tcell.tumour_assoc.pseudobulk %>% 
+  ggplot(., aes(x = clin_ResistanceType, y = SCTdata)) + 
+	geom_boxplot(notch = F, outlier.shape = NA) + 
+  geom_jitter(shape=16, size=0.3, position=position_jitter(0.2)) +
+  ggpubr::stat_compare_means(method="wilcox", size = 3, comparisons=list(c(1,2))) +
+	scale_y_continuous(expand = expansion(mult = c(0.05, 0.2))) + 
+  facet_wrap( ~ SYMBOL, nrow = 3, scales = "free") +
+  theme_classic()
+# ggsave(file.path(dir.out.figure.analysis, paste0(PROJ_BATCH, ".seurat.obj.exhaustMarkers.Tcells_tumour_assoc.boxplot.allSamples_newREF.png")), 
+#        device = "png", width = 7, height = 7, units = "in", dpi = 300, bg = "white")
+
+## get means
+crescent.seurat.obj.T_cells.integrated.no_gdT.SCTdata.im_target_genes_Tcell.tumour_assoc.pseudobulk %>% 
+  group_by(SYMBOL, clin_ResistanceType) %>% 
+  summarize(SCTdata_mean = mean(SCTdata)) %>% 
+  pivot_wider(id_cols = SYMBOL, names_from = "clin_ResistanceType", values_from = "SCTdata_mean") %>% print.data.frame()
+#   SYMBOL   Acquired   Primary
+# 1   CCR8 0.09728914 0.0975103
+# 2  CD226 0.18549383 0.1877208
+# 3   CD96 0.98972327 1.0643769
+# 4  CTLA4 0.81547981 0.6425010
+# 5 HAVCR2 0.40461654 0.2096404
+# 6   LAG3 0.91831852 0.8240537
+# 7  PDCD1 0.42461112 0.2973220
+# 8  PVRIG 0.37483780 0.2973290
+# 9  TIGIT 0.92313415 0.6458892
+```
+
+##### MDavis
+
+```{r}
+crescent.seurat.obj.T_cells.integrated.no_gdT.SCTdata.im_target_genes_Tcell.mdavis.pseudobulk =
+  crescent.seurat.obj.T_cells.integrated.no_gdT.SCTdata.im_target_genes_Tcell.df2 %>% 
+  dplyr::filter(sample_barcode %in% c(crescent.seurat.obj.T_cells.integrated.no_gdT.mdavis@meta.data %>% rownames())) %>% 
+  dplyr::group_by(dataset, SYMBOL) %>% 
+  summarise(SCTdata = mean(SCTdata)) %>% 
+  left_join(., 
+            crescent.seurat.obj.T_cells.integrated.no_gdT@meta.data %>% 
+              dplyr::select(dataset, starts_with("clin_")) %>% 
+              distinct() %>% remove_rownames(), 
+            by=c("dataset"))
+crescent.seurat.obj.T_cells.integrated.no_gdT.SCTdata.im_target_genes_Tcell.mdavis.pseudobulk
+
+crescent.seurat.obj.T_cells.integrated.no_gdT.SCTdata.im_target_genes_Tcell.mdavis.pseudobulk %>% 
+  ggplot(., aes(x = clin_ResistanceType, y = SCTdata)) + 
+	geom_boxplot(notch = F, outlier.shape = NA) + 
+  geom_jitter(shape=16, size=0.3, position=position_jitter(0.2)) +
+  ggpubr::stat_compare_means(method="wilcox", size = 3, comparisons=list(c(1,2))) +
+	scale_y_continuous(expand = expansion(mult = c(0.05, 0.2))) + 
+  facet_wrap( ~ SYMBOL, nrow = 3, scales = "free") +
+  theme_classic()
+# ggsave(file.path(dir.out.figure.analysis, paste0(PROJ_BATCH, ".seurat.obj.exhaustMarkers.Tcells_mdavis.boxplot.allSamples_newREF.png")), 
+#        device = "png", width = 7, height = 7, units = "in", dpi = 300, bg = "white")
+
+## get means
+crescent.seurat.obj.T_cells.integrated.no_gdT.SCTdata.im_target_genes_Tcell.mdavis.pseudobulk %>% 
+  group_by(SYMBOL, clin_ResistanceType) %>% 
+  summarize(SCTdata_mean = mean(SCTdata)) %>% 
+  pivot_wider(id_cols = SYMBOL, names_from = "clin_ResistanceType", values_from = "SCTdata_mean") %>% print.data.frame()
+#   SYMBOL  Acquired   Primary
+# 1   CCR8 0.1210464 0.1065839
+# 2  CD226 0.1882426 0.1504379
+# 3   CD96 0.9322761 1.0146406
+# 4  CTLA4 0.7317719 0.6543424
+# 5 HAVCR2 0.2930740 0.2019039
+# 6   LAG3 0.6695068 0.8123101
+# 7  PDCD1 0.2854271 0.2984325
+# 8  PVRIG 0.3460723 0.2946358
+# 9  TIGIT 0.8444566 0.6311071
+```
+
+##### Human_MDavis
+
+```{r}
+crescent.seurat.obj.T_cells.integrated.no_gdT.SCTdata.im_target_genes_Tcell.human_mdavis.pseudobulk =
+  crescent.seurat.obj.T_cells.integrated.no_gdT.SCTdata.im_target_genes_Tcell.df2 %>% 
+  dplyr::filter(sample_barcode %in% c(crescent.seurat.obj.T_cells.integrated.no_gdT.human_mdavis@meta.data %>% rownames())) %>% 
+  dplyr::group_by(dataset, SYMBOL) %>% 
+  summarise(SCTdata = mean(SCTdata)) %>% 
+  left_join(., 
+            crescent.seurat.obj.T_cells.integrated.no_gdT@meta.data %>% 
+              dplyr::select(dataset, starts_with("clin_")) %>% 
+              distinct() %>% remove_rownames(), 
+            by=c("dataset"))
+crescent.seurat.obj.T_cells.integrated.no_gdT.SCTdata.im_target_genes_Tcell.human_mdavis.pseudobulk
+
+crescent.seurat.obj.T_cells.integrated.no_gdT.SCTdata.im_target_genes_Tcell.human_mdavis.pseudobulk %>% 
+  ggplot(., aes(x = clin_ResistanceType, y = SCTdata)) + 
+	geom_boxplot(notch = F, outlier.shape = NA) + 
+  geom_jitter(shape=16, size=0.3, position=position_jitter(0.2)) +
+  ggpubr::stat_compare_means(method="wilcox", size = 3, comparisons=list(c(1,2))) +
+	scale_y_continuous(expand = expansion(mult = c(0.05, 0.2))) + 
+  facet_wrap( ~ SYMBOL, nrow = 3, scales = "free") +
+  theme_classic()
+# ggsave(file.path(dir.out.figure.analysis, paste0(PROJ_BATCH, ".seurat.obj.exhaustMarkers.Tcells_human_mdavis.boxplot.allSamples_newREF.png")), 
+#        device = "png", width = 7, height = 7, units = "in", dpi = 300, bg = "white")
+
+## get means
+crescent.seurat.obj.T_cells.integrated.no_gdT.SCTdata.im_target_genes_Tcell.human_mdavis.pseudobulk %>% 
+  group_by(SYMBOL, clin_ResistanceType) %>% 
+  summarize(SCTdata_mean = mean(SCTdata)) %>% 
+  pivot_wider(id_cols = SYMBOL, names_from = "clin_ResistanceType", values_from = "SCTdata_mean") %>% print.data.frame()
+#   SYMBOL   Acquired   Primary
+# 1   CCR8 0.01083879 0.0602127
+# 2  CD226 0.17548425 0.5346927
+# 3   CD96 1.05410257 1.3704452
+# 4  CTLA4 0.74425638 0.4924700
+# 5 HAVCR2 0.27384072 0.1867475
+# 6   LAG3 1.12998171 0.7533328
+# 7  PDCD1 0.51882582 0.2736502
+# 8  PVRIG 0.45784112 0.3064454
+# 9  TIGIT 1.07431603 0.7850246
+```
+
+
+
+
+## plots - viral_or_nonspecific T cells
+
+```{r}
+crescent.seurat.obj.T_cells.integrated.no_gdT.non_tumour_assoc = subset(crescent.seurat.obj.T_cells.integrated.no_gdT, subset = Community_specificity_lean == "viral_or_nonspecific")
+crescent.seurat.obj.T_cells.integrated.no_gdT.non_tumour_assoc@meta.data
+```
+
+### DotPlot()
+
+```{r}
+Seurat::DotPlot(object = crescent.seurat.obj.T_cells.integrated.no_gdT.non_tumour_assoc, features = immunomod.targets.genes.Tcell, assay = "SCT", group.by = "dataset", cols = colours_n40) +
+  scale_y_discrete(limits = rev(sample_order)) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
+# ggsave(file.path(dir.out.figure.analysis, paste0(PROJ_BATCH, ".seurat.obj.exhaustMarkers.Tcells_non_tumour_assoc.DotPlot.allSamples.png")), 
+#        device = "png", width = 7, height = 4, units = "in")
+
+Seurat::DotPlot(object = crescent.seurat.obj.T_cells.integrated.no_gdT.non_tumour_assoc, features = immunomod.targets.genes.Tcell, assay = "SCT", group.by = "dataset", cols = colours_n40) +
+  scale_y_discrete(limits = rev(sample_order.Tcell_num_gt500)) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
+```
+
+### boxplot
+
+#### per cell
+
+##### tumor associated
+
+```{r}
+crescent.seurat.obj.T_cells.integrated.no_gdT.SCTdata.im_target_genes_Tcell.non_tumour_assoc = 
+  crescent.seurat.obj.T_cells.integrated.no_gdT.SCTdata.im_target_genes_Tcell.df2 %>% 
+  dplyr::filter(sample_barcode %in% c(crescent.seurat.obj.T_cells.integrated.no_gdT.non_tumour_assoc@meta.data %>% rownames()))
+crescent.seurat.obj.T_cells.integrated.no_gdT.SCTdata.im_target_genes_Tcell.non_tumour_assoc$sample_barcode %>% unique() %>% length() # [1] 721
+
+crescent.seurat.obj.T_cells.integrated.no_gdT.SCTdata.im_target_genes_Tcell.non_tumour_assoc %>% 
+  ggplot(., aes(x = clin_ResistanceType, y = SCTdata)) + 
+	geom_boxplot(notch = F, outlier.shape = NA) + 
+  geom_jitter(shape=16, size=0.3, position=position_jitter(0.2)) +
+  ggpubr::stat_compare_means(method="wilcox", size = 3, comparisons=list(c(1,2))) +
+	scale_y_continuous(expand = expansion(mult = c(0.05, 0.2))) + 
+  facet_wrap( ~ SYMBOL, nrow = 3, scales = "free") +
+  theme_classic()
+# ggsave(file.path(dir.out.figure.analysis, paste0(PROJ_BATCH, ".seurat.obj.exhaustMarkers.Tcells_tumour_assoc.boxplot.allSamples_newREF.png")), 
+#        device = "png", width = 7, height = 7, units = "in", dpi = 300, bg = "white")
+
+## get means
+crescent.seurat.obj.T_cells.integrated.no_gdT.SCTdata.im_target_genes_Tcell.non_tumour_assoc %>% 
+  group_by(SYMBOL, clin_ResistanceType) %>% 
+  summarize(SCTdata_mean = mean(SCTdata)) %>% 
+  pivot_wider(id_cols = SYMBOL, names_from = "clin_ResistanceType", values_from = "SCTdata_mean") %>% print.data.frame()
+#   SYMBOL   Acquired   Primary
+# 1   CCR8 0.02786379 0.1985414
+# 2  CD226 0.14047657 0.1464414
+# 3   CD96 1.07560683 0.9447712
+# 4  CTLA4 0.45510651 0.8643146
+# 5 HAVCR2 0.35788216 0.3299338
+# 6   LAG3 1.21974135 1.0922771
+# 7  PDCD1 0.50776829 0.4282011
+# 8  PVRIG 0.47413560 0.3786951
+# 9  TIGIT 0.80481541 0.9082835
+```
+
+#### pseudo-bulk
+
+##### tumor associated
+
+```{r}
+crescent.seurat.obj.T_cells.integrated.no_gdT.SCTdata.im_target_genes_Tcell.non_tumour_assoc.pseudobulk =
+  crescent.seurat.obj.T_cells.integrated.no_gdT.SCTdata.im_target_genes_Tcell.df2 %>% 
+  dplyr::filter(sample_barcode %in% c(crescent.seurat.obj.T_cells.integrated.no_gdT.non_tumour_assoc@meta.data %>% rownames())) %>% 
+  dplyr::group_by(dataset, SYMBOL) %>% 
+  summarise(SCTdata = mean(SCTdata)) %>% 
+  left_join(., 
+            crescent.seurat.obj.T_cells.integrated.no_gdT@meta.data %>% 
+              dplyr::select(dataset, starts_with("clin_")) %>% 
+              distinct() %>% remove_rownames(), 
+            by=c("dataset"))
+crescent.seurat.obj.T_cells.integrated.no_gdT.SCTdata.im_target_genes_Tcell.non_tumour_assoc.pseudobulk
+
+crescent.seurat.obj.T_cells.integrated.no_gdT.SCTdata.im_target_genes_Tcell.non_tumour_assoc.pseudobulk %>% 
+  ggplot(., aes(x = clin_ResistanceType, y = SCTdata)) + 
+	geom_boxplot(notch = F, outlier.shape = NA) + 
+  geom_jitter(shape=16, size=0.3, position=position_jitter(0.2)) +
+  ggpubr::stat_compare_means(method="wilcox", size = 3, comparisons=list(c(1,2))) +
+	scale_y_continuous(expand = expansion(mult = c(0.05, 0.2))) + 
+  facet_wrap( ~ SYMBOL, nrow = 3, scales = "free") +
+  theme_classic()
+# ggsave(file.path(dir.out.figure.analysis, paste0(PROJ_BATCH, ".seurat.obj.exhaustMarkers.Tcells_tumour_assoc.boxplot.allSamples_newREF.png")), 
+#        device = "png", width = 7, height = 7, units = "in", dpi = 300, bg = "white")
+
+## get means
+crescent.seurat.obj.T_cells.integrated.no_gdT.SCTdata.im_target_genes_Tcell.non_tumour_assoc.pseudobulk %>% 
+  group_by(SYMBOL, clin_ResistanceType) %>% 
+  summarize(SCTdata_mean = mean(SCTdata)) %>% 
+  pivot_wider(id_cols = SYMBOL, names_from = "clin_ResistanceType", values_from = "SCTdata_mean") %>% print.data.frame()
+#   SYMBOL  Acquired   Primary
+# 1   CCR8 0.2139558 0.1478142
+# 2  CD226 0.1581311 0.1559208
+# 3   CD96 1.0327221 0.9801782
+# 4  CTLA4 0.8074128 0.7964050
+# 5 HAVCR2 0.2743245 0.2223705
+# 6   LAG3 0.9741598 0.8088163
+# 7  PDCD1 0.4769683 0.3599690
+# 8  PVRIG 0.4059572 0.3826182
+# 9  TIGIT 0.8751769 0.7373020
+```
+
+<br>
+
+# EOF

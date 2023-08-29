@@ -1,0 +1,307 @@
+---
+title: "2023_07_31_0722-IRIS_batch123_qc_metrics_v2"
+author: "Ming"
+date: "`r format(Sys.time(), '%Y_%m_%d_%H_%M')`"
+---
+
+```{r setup, include=FALSE}
+# knitr::opts_chunk$set(eval = FALSE)      ## no run
+# knitr::opts_chunk$set(include = FALSE)   ## yes run, no code, no output
+knitr::opts_chunk$set(echo = TRUE)         ## yes run, no code, yes output ( for figures )
+knitr::opts_chunk$set(results = 'hide')    ## yes run, yes code, no output
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(warning = FALSE)
+suppressPackageStartupMessages(library(tidyverse))
+suppressPackageStartupMessages(library(ggplot2))
+'%ni%' <- Negate('%in%')
+options(scipen = 999)       # decimals
+# options(scipen = 0)         # sci notation
+# options(max.print=999999)
+
+dir.data            = "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/data"
+dir.data.rna.newREF = "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/data_scGEX_newREF"
+dir.out.data        = "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/out_data"
+dir.out.figure.qc   = "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/out_figures_qc"
+```
+
+# qc metric thresholds
+
+- dataset passes all key Chromium 10X metrics as per 
+- ( https://www.10xgenomics.com/support/single-cell-gene-expression/documentation/steps/sequencing/interpreting-cell-ranger-web-summary-files-for-single-cell-gene-expression-assays )
+    - Estimated.Number.of.Cells > 500
+    - Mean.Reads.per.Cell > 20,000
+    - Valid.Barcodes > 75%
+    - Q30.Bases.in.Barcode > 90%
+    - Q30.Bases.in.UMI > 75%
+    - Q30.Bases.in.RNA.Read > 65%
+    - Total.Genes.Detected > 10,000
+    - Reads.Mapped.to.Genome > 50%
+    - Reads.Mapped.Confidently.to.Genome > 30%
+    - Reads.Mapped.Confidently.to.Intergenic.Regions < 10%
+    - Reads.Mapped.Confidently.to.Transcriptome > 30%
+
+# read in data
+
+## RNA
+
+```{r}
+metrics_summary.RNA.list = list()
+for ( i in list.files(file.path(dir.data.rna.newREF), pattern = "metrics_summary.csv", full.names = T, recursive = T) ) {
+  
+  # i = list.files(file.path(dir.data.rna.newREF), pattern = "metrics_summary.csv", full.names = T, recursive = T) %>% .[1]; i
+  sample_name = i %>% gsub("/metrics_summary.csv", "", .) %>% basename(); sample_name
+  metrics_summary.RNA.list[[sample_name]] = 
+    read.table(i, header = T, sep = ",") %>% 
+    mutate(across(.cols = everything(), .fns = ~ gsub("%", "", .x)),
+           across(.cols = everything(), .fns = ~ gsub(",", "", .x)),
+           across(.cols = everything(), .fns = ~ as.numeric(.x))) %>% 
+    dplyr::select(-starts_with("Antibody"))
+  
+}
+# metrics_summary.RNA.list
+metrics_summary.RNA.df = 
+  metrics_summary.RNA.list %>% bind_rows(., .id = "sample")
+metrics_summary.RNA.df
+```
+
+## CITE
+
+```{r}
+metrics_summary.CITE.list = list()
+for ( i in list.files(file.path(dir.data), pattern = "metrics_summary.csv", full.names = T, recursive = T) %>% str_subset("RNA_CITE") ) {
+  
+  # i = list.files(file.path(dir.data), pattern = "metrics_summary.csv", full.names = T, recursive = T) %>% str_subset("RNA_CITE") %>% .[1]; i
+  sample_name = i %>% gsub(".*data/", "", .) %>% gsub("_RNA_CITE.*", "", .); sample_name
+  metrics_summary.CITE.list[[sample_name]] =
+    read.table(i, header = T, sep = ",") %>% 
+    mutate(across(.cols = everything(), .fns = ~ gsub("%", "", .x)),
+           across(.cols = everything(), .fns = ~ gsub(",", "", .x)),
+           across(.cols = everything(), .fns = ~ as.numeric(.x))) %>% 
+    dplyr::select(Estimated.Number.of.Cells, starts_with("Antibody"))
+  
+}
+# metrics_summary.CITE.list
+metrics_summary.CITE.df = 
+  metrics_summary.CITE.list %>% bind_rows(., .id = "sample")
+metrics_summary.CITE.df
+```
+
+## TCR
+
+```{r}
+metrics_summary.TCR.list = list()
+for ( i in list.files(file.path(dir.data), pattern = "metrics_summary.csv", full.names = T, recursive = T) %>% str_subset("TCR") ) {
+  
+  # i = list.files(file.path(dir.data), pattern = "metrics_summary.csv", full.names = T, recursive = T) %>% str_subset("TCR") %>% .[1]; i
+  sample_name = i %>% gsub(".*data/", "", .) %>% gsub("_TCR.*", "", .); sample_name
+  metrics_summary.TCR.list[[sample_name]] =
+    read.table(i, header = T, sep = ",") %>% 
+    mutate(across(.cols = everything(), .fns = ~ gsub("%", "", .x)),
+           across(.cols = everything(), .fns = ~ gsub(",", "", .x)),
+           across(.cols = everything(), .fns = ~ as.numeric(.x)))
+  
+}
+# metrics_summary.TCR.list
+metrics_summary.TCR.df = 
+  metrics_summary.TCR.list %>% bind_rows(., .id = "sample")
+metrics_summary.TCR.df
+```
+
+## BCR
+
+```{r}
+metrics_summary.BCR.list = list()
+for ( i in list.files(file.path(dir.data), pattern = "metrics_summary.csv", full.names = T, recursive = T) %>% str_subset("BCR") ) {
+  
+  # i = list.files(file.path(dir.data), pattern = "metrics_summary.csv", full.names = T, recursive = T) %>% str_subset("BCR") %>% .[1]; i
+  sample_name = i %>% gsub(".*data/", "", .) %>% gsub("_BCR.*", "", .); sample_name
+  metrics_summary.BCR.list[[sample_name]] =
+    read.table(i, header = T, sep = ",") %>% 
+    mutate(across(.cols = everything(), .fns = ~ gsub("%", "", .x)),
+           across(.cols = everything(), .fns = ~ gsub(",", "", .x)),
+           across(.cols = everything(), .fns = ~ as.numeric(.x)))
+  
+}
+# metrics_summary.BCR.list
+metrics_summary.BCR.df = 
+  metrics_summary.BCR.list %>% bind_rows(., .id = "sample")
+metrics_summary.BCR.df
+```
+
+# write.table()
+
+```{r}
+metrics_summary.RNA.df  %>% write.table(., file.path(dir.out.data, "metrics_summary.RNA.df.csv"), quote = F, sep = ",", row.names = F)
+metrics_summary.CITE.df %>% write.table(., file.path(dir.out.data, "metrics_summary.CITE.df.csv"), quote = F, sep = ",", row.names = F)
+metrics_summary.TCR.df  %>% write.table(., file.path(dir.out.data, "metrics_summary.TCR.df.csv"), quote = F, sep = ",", row.names = F)
+metrics_summary.BCR.df  %>% write.table(., file.path(dir.out.data, "metrics_summary.BCR.df.csv"), quote = F, sep = ",", row.names = F)
+```
+
+# plot
+
+```{r}
+colors_v1 = c("#CAB2D6", "palegreen2", "dodgerblue2", "#9B59B6", "#FF7F00", 
+              "gold1","skyblue2", "#FB9A99", "#CB4335", "#196F3D", 
+              "#FDBF6F", "khaki2", "maroon", "orchid1", "deeppink1", 
+              "steelblue4", "darkturquoise", "yellow4", "yellow3", 
+              "darkorange4", "brown", "gray70")
+```
+
+## RNA
+
+```{r}
+metrics_summary.RNA.df %>% names() %>% str_subset("sample", negate = T) %>% 
+  # length() %>% 
+  cat(., sep = "\n")
+# [1] 19
+c("Estimated.Number.of.Cells", "Mean.Reads.per.Cell", "Median.Genes.per.Cell", 
+"Number.of.Reads", "Valid.Barcodes", "Sequencing.Saturation", 
+"Q30.Bases.in.Barcode", "Q30.Bases.in.RNA.Read", "Q30.Bases.in.UMI", 
+"Reads.Mapped.to.Genome", "Reads.Mapped.Confidently.to.Genome", 
+"Reads.Mapped.Confidently.to.Intergenic.Regions", "Reads.Mapped.Confidently.to.Intronic.Regions", 
+"Reads.Mapped.Confidently.to.Exonic.Regions", "Reads.Mapped.Confidently.to.Transcriptome", 
+"Reads.Mapped.Antisense.to.Gene", "Fraction.Reads.in.Cells", 
+"Total.Genes.Detected", "Median.UMI.Counts.per.Cell")
+
+qc_plots.scRNA.list = list()
+for ( i in metrics_summary.RNA.df %>% names() %>% str_subset("sample", negate = T) ) {
+  
+  # i = metrics_summary.RNA.df %>% names() %>% str_subset("sample", negate = T) %>% .[1]; i
+  
+  qc_plots.scRNA.list[[i]] =
+    metrics_summary.RNA.df %>% dplyr::filter(sample != "IRS-0070-P-070") %>% 
+    ggplot(aes(x=sample, y=!!as.symbol(i), fill = sample)) +
+    geom_bar(stat="identity", position = "dodge") + 
+    theme_classic() + 
+    theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) +
+    scale_fill_manual(values=colors_v1) +
+    labs(title = i) +
+    geom_text(aes(x=sample, y=!!as.symbol(i), label=!!as.symbol(i)), 
+              position=position_dodge(width=0.9), vjust=-0.25) + 
+    theme(axis.text.x = element_blank(), axis.ticks.x = element_blank(), axis.title.x = element_blank()) +
+    scale_y_continuous(expand = expansion(mult = 0.1))
+  
+}
+# qc_plots.scRNA.list[[1]]
+```
+
+```{r}
+## general metrics
+Estimated.Number.of.Cells.plt  = qc_plots.scRNA.list[["Estimated.Number.of.Cells"]]  + geom_hline(yintercept=500,   color="gray50", linetype="dashed") + labs(subtitle = "Expected Value: 500-10,000")
+Mean.Reads.per.Cell.plt        = qc_plots.scRNA.list[["Mean.Reads.per.Cell"]]        + geom_hline(yintercept=20000, color="gray50", linetype="dashed") + labs(subtitle = "minimum 20,000 ( depend on cell type, seq depth )")
+Median.Genes.per.Cell.plt      = qc_plots.scRNA.list[["Median.Genes.per.Cell"]]      + geom_hline(yintercept=2000,  color="gray50", linetype="dashed") + labs(subtitle = "Target: 2,000 ( depend on cell type, seq depth )")
+Number.of.Reads.plt            = qc_plots.scRNA.list[["Number.of.Reads"]]
+Valid.Barcodes.plt             = qc_plots.scRNA.list[["Valid.Barcodes"]]             + geom_hline(yintercept=75,    color="gray50", linetype="dashed") + labs(subtitle = "Expected Value: >75%")
+Sequencing.Saturation.plt      = qc_plots.scRNA.list[["Sequencing.Saturation"]]      + geom_hline(yintercept=75,    color="gray50", linetype="dashed") + labs(subtitle = "Expected Value: depend on sample library complexity")
+Q30.Bases.in.Barcode.plt       = qc_plots.scRNA.list[["Q30.Bases.in.Barcode"]]       + geom_hline(yintercept=90,    color="gray50", linetype="dashed") + labs(subtitle = "Expected Value: >90%")
+Q30.Bases.in.RNA.Read.plt      = qc_plots.scRNA.list[["Q30.Bases.in.RNA.Read"]]      + geom_hline(yintercept=65,    color="gray50", linetype="dashed") + labs(subtitle = "Expected Value: >65%")
+Q30.Bases.in.UMI.plt           = qc_plots.scRNA.list[["Q30.Bases.in.UMI"]]           + geom_hline(yintercept=75,    color="gray50", linetype="dashed") + labs(subtitle = "Expected Value: >75%")
+Fraction.Reads.in.Cells.plt    = qc_plots.scRNA.list[["Fraction.Reads.in.Cells"]]    + geom_hline(yintercept=70,    color="gray50", linetype="dashed") + labs(subtitle = "Expected Value: >70%")
+Total.Genes.Detected.plt       = qc_plots.scRNA.list[["Total.Genes.Detected"]]       + geom_hline(yintercept=10000, color="gray50", linetype="dashed") + labs(subtitle = "Expected Value: >10,000 ( depend on sample type )")
+Median.UMI.Counts.per.Cell.plt = qc_plots.scRNA.list[["Median.UMI.Counts.per.Cell"]] + geom_hline(yintercept=5000,  color="gray50", linetype="dashed") + labs(subtitle = "Expected Value: >5000 ( depend on sample type )")
+
+## mapping metrics
+Reads.Mapped.to.Genome.plt                         = qc_plots.scRNA.list[["Reads.Mapped.to.Genome"]]                         + geom_hline(yintercept=50, color="gray50", linetype="dashed") + labs(subtitle = "Expected Value: 50%-99% ( variable, depend on library quality )")
+Reads.Mapped.Confidently.to.Genome.plt             = qc_plots.scRNA.list[["Reads.Mapped.Confidently.to.Genome"]]             + geom_hline(yintercept=30, color="gray50", linetype="dashed") + labs(subtitle = "Expected Value: 30%-90% ( variable, depend on library quality )")
+Reads.Mapped.Confidently.to.Intergenic.Regions.plt = qc_plots.scRNA.list[["Reads.Mapped.Confidently.to.Intergenic.Regions"]] + geom_hline(yintercept=10, color="gray50", linetype="dashed") + labs(subtitle = "Expected Value: <10%")
+Reads.Mapped.Confidently.to.Intronic.Regions.plt   = qc_plots.scRNA.list[["Reads.Mapped.Confidently.to.Intronic.Regions"]]   + labs(subtitle = "Expected Value: variable, depend on sample type")
+Reads.Mapped.Confidently.to.Exonic.Regions.plt     = qc_plots.scRNA.list[["Reads.Mapped.Confidently.to.Exonic.Regions"]]     + labs(subtitle = "Expected Value: variable, depend on sample type")
+Reads.Mapped.Confidently.to.Transcriptome.plt      = qc_plots.scRNA.list[["Reads.Mapped.Confidently.to.Transcriptome"]]      + geom_hline(yintercept=30, color="gray50", linetype="dashed") + labs(subtitle = "Expected Value: 500-10,000")
+Reads.Mapped.Antisense.to.Gene.plt                 = qc_plots.scRNA.list[["Reads.Mapped.Antisense.to.Gene"]]                 + geom_hline(yintercept=10, color="gray50", linetype="dashed") + labs(subtitle = "Expected Value: <10%")
+
+ggpubr::ggarrange(
+  Estimated.Number.of.Cells.plt, 
+  Median.Genes.per.Cell.plt, 
+  Number.of.Reads.plt, 
+  Valid.Barcodes.plt, 
+  Sequencing.Saturation.plt, 
+  Q30.Bases.in.Barcode.plt, 
+  Q30.Bases.in.UMI.plt, 
+  Q30.Bases.in.RNA.Read.plt, 
+  Fraction.Reads.in.Cells.plt, 
+  Total.Genes.Detected.plt, 
+  Median.UMI.Counts.per.Cell.plt, 
+  ncol = 4, nrow = 3, common.legend = T, legend = "bottom")
+ggsave(file.path(dir.out.figure.qc, "IRIS_qc_metrics_general.scRNAseq.pdf"), 
+       device = "pdf", width = 20, height = 10, units = "in")
+
+ggpubr::ggarrange(
+  Reads.Mapped.to.Genome.plt, 
+  Reads.Mapped.Confidently.to.Genome.plt, 
+  Reads.Mapped.Confidently.to.Intergenic.Regions.plt, 
+  Reads.Mapped.Confidently.to.Intronic.Regions.plt, 
+  Reads.Mapped.Confidently.to.Exonic.Regions.plt, 
+  Reads.Mapped.Confidently.to.Transcriptome.plt, 
+  Reads.Mapped.Antisense.to.Gene.plt, 
+  ncol = 4, nrow = 2, common.legend = T, legend = "bottom")
+ggsave(file.path(dir.out.figure.qc, "IRIS_qc_metrics_alignment.scRNAseq.pdf"), 
+       device = "pdf", width = 20, height = 9, units = "in")
+```
+
+## CITE
+
+```{r}
+metrics_summary.CITE.df %>% 
+  pivot_longer(cols = -sample, names_to = "Metric", values_to = "Value") %>% 
+  ggplot(aes(x=sample, y=Value, fill = sample)) +
+  geom_bar(stat="identity", position = "dodge") + 
+  theme_classic() + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) +
+  labs(title = "scCITE-seq QC Metrics") + 
+  scale_fill_manual(values=colors_v1) + 
+  scale_y_continuous(labels = scales::comma,
+                     expand = expansion(mult = 0.2)) +
+  geom_text(aes(x=sample, y=Value, label=Value), 
+            position=position_dodge(width=0.9), vjust=-0.25) + 
+  theme(axis.text.x = element_blank(), axis.ticks.x = element_blank(), axis.title.x = element_blank()) + 
+  facet_wrap(~ Metric, nrow = 4, scales = "free")
+ggsave(file.path(dir.out.figure.qc, "IRIS_qc_metrics.scCITEseq.pdf"), 
+       device = "pdf", width = 14, height = 6, units = "in")
+```
+
+## TCR
+
+```{r}
+metrics_summary.TCR.df %>% 
+  pivot_longer(cols = -sample, names_to = "Metric", values_to = "Value") %>% 
+  ggplot(aes(x=sample, y=Value, fill = sample)) +
+  geom_bar(stat="identity", position = "dodge") + 
+  theme_classic() + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) +
+  labs(title = "scTCR-seq QC Metrics") + 
+  scale_fill_manual(values=colors_v1) + 
+  scale_y_continuous(labels = scales::comma,
+                     expand = expansion(mult = 0.3)) +
+  geom_text(aes(x=sample, y=Value, label=Value), 
+            position=position_dodge(width=0.9), vjust=-0.25) + 
+  # ggrepel::geom_text_repel(aes(x=sample, y=Value, label=Value), size = 2) + #, position=position_dodge(width=0.9), vjust=-0.25) + 
+  theme(axis.text.x = element_blank(), axis.ticks.x = element_blank(), axis.title.x = element_blank()) + 
+  facet_wrap(~ Metric, nrow = 5, scales = "free")
+ggsave(file.path(dir.out.figure.qc, "IRIS_qc_metrics.scTCRseq.pdf"), 
+       device = "pdf", width = 20, height = 10, units = "in")
+```
+
+## BCR
+
+```{r}
+metrics_summary.BCR.df %>% 
+  pivot_longer(cols = -sample, names_to = "Metric", values_to = "Value") %>% 
+  ggplot(aes(x=sample, y=Value, fill = sample)) +
+  geom_bar(stat="identity", position = "dodge") + 
+  theme_classic() + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) +
+  labs(title = "scBCR-seq QC Metrics") + 
+  scale_fill_manual(values=colors_v1) + 
+  scale_y_continuous(labels = scales::comma,
+                     expand = expansion(mult = 0.3)) +
+  geom_text(aes(x=sample, y=Value, label=Value), size = 3,
+            position=position_dodge(width=0.9), vjust=-0.25) + 
+  theme(axis.text.x = element_blank(), axis.ticks.x = element_blank(), axis.title.x = element_blank()) + 
+  facet_wrap(~ Metric, nrow = 5, scales = "free")
+ggsave(file.path(dir.out.figure.qc, "IRIS_qc_metrics.scBCRseq.pdf"), 
+       device = "pdf", width = 20, height = 10, units = "in")
+```
+
+<br>
+
+# EOF

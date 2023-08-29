@@ -1,0 +1,126 @@
+---
+title: "2023_08_28_1321-IRIS_batch123_find_viral_cells_v1"
+author: "Ming"
+date: "`r format(Sys.time(), '%Y_%m_%d_%H_%M')`"
+---
+
+```{r setup, include=FALSE}
+# knitr::opts_chunk$set(eval = FALSE)      ## no run
+# knitr::opts_chunk$set(include = FALSE)   ## yes run, no code, no output
+knitr::opts_chunk$set(echo = TRUE)         ## yes run, no code, yes output ( for figures )
+knitr::opts_chunk$set(results = 'hide')    ## yes run, yes code, no output
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(warning = FALSE)
+suppressPackageStartupMessages(library(tidyverse))
+suppressPackageStartupMessages(library(ggplot2))
+'%ni%' = Negate('%in%')
+# options(scipen = 999)       # decimals
+# options(scipen = 0)         # sci notation
+# options(max.print=999999)
+
+dir.ref                 = "/Users/minghan/bioinfoproj/references"
+dir.clin                = "/Users/minghan/GDrive_minghanpughlab/PughLabPMH/_projects/IRIS/_clin"
+dir.data                = "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/data"
+dir.data.h4h            = "/cluster/projects/cgptip/projects/IRIS/projects/scmulti/analysis/analysis006_find_viral_cells/outputs"
+dir.out.data            = "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/out_data"
+dir.out.figure.analysis = "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/out_figures_analysis"
+dir.out.figure.qc       = "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/out_figures_qc"
+
+PROJ = "IRIS"
+PROJ_BATCH = "IRIS_batch123"
+
+colours_n40 = 
+  c("dodgerblue2", "#E31A1C", "green4", "#6A3D9A", "#FF7F00", 
+    "gold1", "gray70", "#C1645C", "skyblue2", "#FB9A99", "palegreen2", 
+    "#CAB2D6", "#FDBF6F", "#D46A43", "khaki2", "maroon", 
+    "orchid1", "deeppink1", "blue1", "steelblue4", "darkturquoise", 
+    "green1", "yellow4", "yellow3", "darkorange4", "brown",
+    "#5C9A5C", "#CC8BAD", "#B8782A", "#546C9D", "#459E6F",
+    
+    "chocolate4", "chartreuse4", "burlywood", "deeppink4", "lightslateblue",
+    "firebrick", "mintcream", "mediumpurple3", "springgreen4", "slateblue4", "pink")
+
+library(Seurat)
+```
+
+# read in viral cell barcodes
+
+```{r}
+sample.viral_cell_barcodes.list = list()
+for ( i in list.files(file.path(dir.data.h4h), pattern = "barcodes") ){
+  
+  # i = list.files(file.path(dir.data.h4h), pattern = "barcodes")[1]; i
+  sample_name = i %>% gsub("\\..*", "", .) %>% gsub("-", "_", .); sample_name
+  
+  sample.viral_cell_barcodes.list[[sample_name]] = 
+    read.table(file.path(dir.data.h4h, i), header = F, sep = "\t") %>% 
+    mutate(V1 = V1 %>% gsub("CR:Z:", "", .),
+           sample_barcode = paste0(sample_name, "_", V1),
+           dataset = sample_name,
+           viral = "PPH16_reads_detected")
+}
+# sample.viral_cell_barcodes.list[[1]]
+
+sample.viral_cell_barcodes.df = sample.viral_cell_barcodes.list %>% bind_rows()
+sample.viral_cell_barcodes.df
+```
+
+# saveRDS()
+
+```{r}
+sample.viral_cell_barcodes.df %>% saveRDS(., file.path(dir.out.data, paste0(PROJ_BATCH, ".sample.viral_cell_barcodes.df.Rds")))
+```
+
+```{r}
+sample.viral_cell_barcodes.uniq.df = sample.viral_cell_barcodes.df %>% distinct()
+sample.viral_cell_barcodes.uniq.df %>% dim() # [1] 1406    3
+sample.viral_cell_barcodes.uniq.df
+```
+
+# readRDS()
+
+```{r}
+crescent.seurat.obj.singleR.encode.scmulti = readRDS(file.path(dir.out.data, paste0(PROJ_BATCH, ".crescent.seurat.obj.singleR.encode.all_metadata_attached.Rds")))
+crescent.seurat.obj.singleR.encode.scmulti
+
+crescent.seurat.obj.singleR.encode.scmulti.metadata = crescent.seurat.obj.singleR.encode.scmulti@meta.data
+
+crescent.seurat.obj.singleR.encode.scmulti.metadata2 = 
+  crescent.seurat.obj.singleR.encode.scmulti.metadata %>% 
+  rownames_to_column(var="sample_barcode") %>% 
+  left_join(., sample.viral_cell_barcodes.uniq.df %>% dplyr::select(sample_barcode, viral), by=c("sample_barcode")) %>% 
+  dplyr::select(dataset, viral, everything())
+crescent.seurat.obj.singleR.encode.scmulti.metadata2$viral %>% table()
+# PPH16_reads_detected 
+#                  262    <- oh dang, majority probably in empty droplets...
+
+crescent.seurat.obj.singleR.encode.scmulti.metadata2 %>% dplyr::select(annot_combined, viral) %>% table() %>% as.data.frame() %>% dplyr::filter(Freq != 0) %>% print.data.frame()
+#          annot_combined                viral Freq
+# 1         B-cells_noBCR PPH16_reads_detected    1
+# 2    CD8+ T-cells_noTCR PPH16_reads_detected    7
+# 3                    DC PPH16_reads_detected    1
+# 4      Epithelial cells PPH16_reads_detected  183    <- nice, makes sense
+# 5  Epithelial cells_TCR PPH16_reads_detected   12
+# 6             Monocytes PPH16_reads_detected    1
+# 7         Monocytes_TCR PPH16_reads_detected    3
+# 8              NK cells PPH16_reads_detected    7
+# 9          NK cells_TCR PPH16_reads_detected    3
+# 10                 NK_T PPH16_reads_detected   37    <- probably multiplets with some epithelial cell droplets
+# 11 T_ex_proliferative_1 PPH16_reads_detected    3
+# 12 T_ex_proliferative_2 PPH16_reads_detected    2
+# 13               T_regs PPH16_reads_detected    2
+
+crescent.seurat.obj.singleR.encode.scmulti@meta.data = crescent.seurat.obj.singleR.encode.scmulti.metadata2
+crescent.seurat.obj.singleR.encode.scmulti@meta.data
+```
+
+# DimPlot()
+
+```{r}
+Seurat::DimPlot(crescent.seurat.obj.singleR.encode.scmulti, reduction = "umap", group.by = "viral", split.by = "clin_p16_IHC") + scale_color_manual(values = c("lightgrey", "red"))
+## { too few cells to see anything }
+```
+
+<br>
+
+# EOF

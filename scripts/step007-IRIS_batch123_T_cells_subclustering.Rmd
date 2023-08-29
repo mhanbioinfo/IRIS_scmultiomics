@@ -1,0 +1,438 @@
+---
+title: "step007-IRIS_batch123_T_cells_subclustering"
+author: "Ming"
+date: "`r format(Sys.time(), '%Y_%m_%d_%H_%M')`"
+---
+
+```{r setup, include=FALSE}
+# knitr::opts_chunk$set(eval = FALSE)      ## no run
+# knitr::opts_chunk$set(include = FALSE)   ## yes run, no code, no output
+knitr::opts_chunk$set(echo = TRUE)         ## yes run, no code, yes output ( for figures )
+knitr::opts_chunk$set(results = 'hide')    ## yes run, yes code, no output
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(warning = FALSE)
+suppressPackageStartupMessages(library(tidyverse))
+suppressPackageStartupMessages(library(ggplot2))
+'%ni%' = Negate('%in%')
+# options(scipen = 999)       # decimals
+# options(scipen = 0)         # sci notation
+# options(max.print=999999)
+
+dir.ref                 = "/Users/minghan/bioinfoproj/references"
+dir.clin                = "/Users/minghan/GDrive_minghanpughlab/PughLabPMH/_projects/IRIS/_clin"
+dir.data                = "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/data"
+dir.out.data            = "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/out_data"
+dir.out.figure.analysis = "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/out_figures_analysis"
+dir.out.figure.qc       = "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/out_figures_qc"
+
+PROJ = "IRIS"
+PROJ_BATCH = "IRIS_batch123"
+
+colours_n40 = 
+  c("dodgerblue2", "#E31A1C", "green4", "#6A3D9A", "#FF7F00", 
+    "gold1", "gray70", "#C1645C", "skyblue2", "#FB9A99", "palegreen2", 
+    "#CAB2D6", "#FDBF6F", "#D46A43", "khaki2", "maroon", 
+    "orchid1", "deeppink1", "blue1", "steelblue4", "darkturquoise", 
+    "green1", "yellow4", "yellow3", "darkorange4", "brown",
+    "#5C9A5C", "#CC8BAD", "#B8782A", "#546C9D", "#459E6F",
+    
+    "chocolate4", "chartreuse4", "burlywood", "deeppink4", "lightslateblue",
+    "firebrick", "mintcream", "mediumpurple3", "springgreen4", "slateblue4", "pink")
+
+library(Seurat)
+```
+
+# readRDS()
+
+```{r}
+crescent.seurat.obj.singleR.encode = readRDS(file.path(dir.out.data, paste0(PROJ_BATCH, ".crescent.seurat.obj.singleR.encode.Rds")))
+```
+
+# --------------------------------------------
+
+# subset T-cells
+
+```{r}
+seurat.obj.T_cells = subset(crescent.seurat.obj.singleR.encode, subset = singleR.labels.revised %in% c("CD4+ T-cells", "CD8+ T-cells"))
+seurat.obj.T_cells
+```
+
+## saveRDS() 
+
+```{r}
+# seurat.obj.T_cells %>% saveRDS(., file.path(dir.out.data, paste0(PROJ_BATCH, ".crescent.seurat.obj.cell_renamed.sce.singleR.encode.TcellsOnly.Rds")))
+```
+
+## readRDS() <---- restart here
+
+```{r}
+seurat.obj.T_cells = readRDS(file.path(dir.out.data, paste0(PROJ_BATCH, ".crescent.seurat.obj.cell_renamed.sce.singleR.encode.TcellsOnly.Rds")))
+seurat.obj.T_cells
+```
+
+## manual markers
+
+```{r}
+## pbmc_T_cells_consensus
+pbmc_T_cells_consensus = readxl::read_xlsx(file.path(dir.ref.signatures, "manual_cell_signatures_v1.xlsx"), sheet = "pbmc_T_cells_consensus", n_max = 17, col_names = FALSE, na = "NA")
+pbmc_T_cells_consensus.long = pbmc_T_cells_consensus %>% dplyr::select(-`...2`) %>% dplyr::rename("cell_type" = "...1") %>% pivot_longer(cols = -cell_type, names_to = "column", values_to = "SYMBOL") %>% dplyr::filter(!is.na(SYMBOL)) %>% dplyr::select(-column)
+pbmc_T_cells_consensus.list = lapply(X = pbmc_T_cells_consensus.long$cell_type %>% unique(), FUN = function(x) pbmc_T_cells_consensus.long %>% dplyr::filter(cell_type == x) %>% dplyr::pull(SYMBOL)) %>% setNames(., pbmc_T_cells_consensus.long$cell_type %>% unique())
+pbmc_T_cells_consensus.list
+
+## azimuth2
+azimuth2_Tcells = readxl::read_xlsx(file.path(dir.ref.signatures, "manual_cell_signatures_v1.xlsx"), sheet = "azimuth2", n_max = 17, col_names = FALSE, na = "NA")
+azimuth2_Tcells.long = azimuth2_Tcells %>% dplyr::select(-`...2`) %>% dplyr::rename("cell_type" = "...1") %>% pivot_longer(cols = -cell_type, names_to = "column", values_to = "SYMBOL") %>% dplyr::filter(!is.na(SYMBOL)) %>% dplyr::select(-column)
+azimuth2_Tcells.list = lapply(X = azimuth2_Tcells.long$cell_type %>% unique(), FUN = function(x) azimuth2_Tcells.long %>% dplyr::filter(cell_type == x) %>% dplyr::pull(SYMBOL)) %>% setNames(., azimuth2_Tcells.long$cell_type %>% unique())
+azimuth2_Tcells.list
+
+## azimuth3
+azimuth3_Tcells = readxl::read_xlsx(file.path(dir.ref.signatures, "manual_cell_signatures_v1.xlsx"), sheet = "azimuth3", n_max = 17, col_names = FALSE, na = "NA")
+azimuth3_Tcells.long = azimuth3_Tcells %>% dplyr::select(-`...2`) %>% dplyr::rename("cell_type" = "...1") %>% pivot_longer(cols = -cell_type, names_to = "column", values_to = "SYMBOL") %>% dplyr::filter(!is.na(SYMBOL)) %>% dplyr::select(-column)
+azimuth3_Tcells.list = lapply(X = azimuth3_Tcells.long$cell_type %>% unique(), FUN = function(x) azimuth3_Tcells.long %>% dplyr::filter(cell_type == x) %>% dplyr::pull(SYMBOL)) %>% setNames(., azimuth3_Tcells.long$cell_type %>% unique())
+azimuth3_Tcells.list
+
+## Puram2017
+Puram2017_Tcells = readxl::read_xlsx(file.path(dir.ref.signatures, "manual_cell_signatures_v1.xlsx"), sheet = "Puram2017_Tcells", n_max = 17, col_names = FALSE, na = "NA")
+Puram2017_Tcells.long = Puram2017_Tcells %>% dplyr::select(-`...2`) %>% dplyr::rename("cell_type" = "...1") %>% pivot_longer(cols = -cell_type, names_to = "column", values_to = "SYMBOL") %>% dplyr::filter(!is.na(SYMBOL)) %>% dplyr::select(-column)
+Puram2017_Tcells.list = lapply(X = Puram2017_Tcells.long$cell_type %>% unique(), FUN = function(x) Puram2017_Tcells.long %>% dplyr::filter(cell_type == x) %>% dplyr::pull(SYMBOL)) %>% setNames(., Puram2017_Tcells.long$cell_type %>% unique())
+Puram2017_Tcells.list
+
+## Cheng2023
+Cheng2023 = readxl::read_xlsx(file.path(dir.ref.signatures, "manual_cell_signatures_v1.xlsx"), sheet = "Cheng2023_2", n_max = 9, col_names = FALSE, na = "NA")
+Cheng2023.long = Cheng2023 %>% dplyr::rename("cell_type" = "...1") %>% pivot_longer(cols = -cell_type, names_to = "column", values_to = "SYMBOL") %>% dplyr::filter(!is.na(SYMBOL)) %>% dplyr::select(-column)
+Cheng2023.list = lapply(X = Cheng2023.long$cell_type %>% unique(), FUN = function(x) Cheng2023.long %>% dplyr::filter(cell_type == x) %>% dplyr::pull(SYMBOL)) %>% setNames(., Cheng2023.long$cell_type %>% unique())
+Cheng2023.list
+```
+
+## T cells re-integration
+
+```{r}
+num_features = 2000
+
+## split by dataset
+Seurat::DefaultAssay(seurat.obj.T_cells) = "SCT"
+crescent.seurat.obj.T_cells.list = SplitObject(seurat.obj.T_cells, split.by = "dataset")
+
+## SCTransform
+crescent.seurat.obj.T_cells.list = 
+  lapply(X = crescent.seurat.obj.T_cells.list, FUN = function(x) {
+    x = Seurat::SCTransform(x)
+})
+# crescent.seurat.obj.T_cells.list[[1]]@assays$SCT
+
+## find integration features
+crescent.seurat.obj.T_cells.integratedfeatures = 
+  Seurat::SelectIntegrationFeatures(object.list = crescent.seurat.obj.T_cells.list,
+                                    nfeatures = num_features) # default 3000
+# crescent.seurat.obj.T_cells.integratedfeatures %>% length() # [1] 2000
+
+## { prepSCT first, then PCA each dataset again based on prepped SCT }
+## PrepSCTIntegration
+crescent.seurat.obj.T_cells.list = 
+  Seurat::PrepSCTIntegration(object.list = crescent.seurat.obj.T_cells.list, 
+                             anchor.features = crescent.seurat.obj.T_cells.integratedfeatures,
+                             verbose = T)
+# crescent.seurat.obj.T_cells.list[[1]]
+
+npcs = 30
+## RunPCA { needed by FindIntegrationAnchors() }
+crescent.seurat.obj.T_cells.list = 
+  lapply(X = crescent.seurat.obj.T_cells.list, FUN = function(x) {
+    x = Seurat::RunPCA(x, 
+                       features = crescent.seurat.obj.T_cells.integratedfeatures, 
+                       verbose = FALSE, 
+                       npcs = npcs) # PcaDimsUse default="1:20"
+  })
+
+## FindIntegrationAnchors
+crescent.seurat.obj.T_cells.anchors.final = 
+  Seurat::FindIntegrationAnchors(object.list = crescent.seurat.obj.T_cells.list,
+                                 # k.filter = 150, # default="200" # How many neighbors (k) to use when filtering anchors
+                                 normalization.method = "SCT", # LogNormalize or SCT
+                                 dims = 1:npcs, # dimensions to use from the CCA to specify the neighbor search space
+                                 anchor.features = crescent.seurat.obj.T_cells.integratedfeatures,
+                                 reduction = "rpca", # ReductionForFindIntegrationAnchors = "rpca"
+                                 # k.anchor = 20, # default="5" # neighbors (k) to use when picking anchors
+                                 # reference = c(4),
+                                 verbose = T)
+rm(crescent.seurat.obj.T_cells.list)
+
+crescent.seurat.obj.T_cells.integrated = 
+  Seurat::IntegrateData(anchorset = crescent.seurat.obj.T_cells.anchors.final,
+                        dims = 1:npcs, 
+                        k.weight = 100, # default="100",
+                        normalization.method = "SCT",
+                        sample.tree = NULL,
+                        preserve.order = T,
+                        verbose = T
+  )
+# crescent.seurat.obj.T_cells.integrated
+
+## re-integrated PCA + UMAP
+crescent.seurat.obj.T_cells.integrated = Seurat::RunPCA(crescent.seurat.obj.T_cells.integrated, verbose = F, npcs = npcs)
+crescent.seurat.obj.T_cells.integrated = Seurat::RunUMAP(crescent.seurat.obj.T_cells.integrated, reduction = "pca", dims = 1:npcs)
+crescent.seurat.obj.T_cells.integrated@reductions
+```
+
+## find gdT
+
+```{r}
+crescent.seurat.obj.T_cells.TR.df = 
+  crescent.seurat.obj.T_cells.integrated@assays$SCT@data %>%
+  # seurat.obj.T_cells@assays$SCT@data %>% 
+  as.data.frame() %>% 
+  rownames_to_column(var="SYMBOL") %>% 
+  mutate(TR = case_when(str_detect(SYMBOL, "TRAV") ~ "TRAV",
+                        str_detect(SYMBOL, "TRBV") ~ "TRBV",
+                        str_detect(SYMBOL, "TRDV") ~ "TRDV",
+                        str_detect(SYMBOL, "TRGV") ~ "TRGV")) %>% 
+  dplyr::select(SYMBOL, TR, everything()) %>% 
+  dplyr::filter(!is.na(TR)) %>% 
+  column_to_rownames(var="SYMBOL") %>% 
+  group_by(TR) %>% 
+  summarize(across(.cols = everything(), .fns = sum)) %>% 
+  column_to_rownames(var="TR") %>% as.matrix() %>% t() %>% as.data.frame()
+
+gdT_cells.vec = 
+  crescent.seurat.obj.T_cells.TR.df %>% 
+  mutate(TRAB = TRAV + TRBV,
+         TRGD = TRDV + TRGV) %>% 
+  dplyr::filter(TRGD > TRAB) %>% rownames()
+gdT_cells.vec %>% length() # [1] 88
+
+DimPlot(crescent.seurat.obj.T_cells.integrated, reduction = "umap", group.by = "seurat_clusters", label = TRUE, repel = TRUE, 
+        cells.highlight = gdT_cells.vec)
+
+crescent.seurat.obj.T_cells.integrated.no_gdT = 
+  subset(crescent.seurat.obj.T_cells.integrated, cells = setdiff(crescent.seurat.obj.T_cells.integrated %>% colnames(), gdT_cells.vec))
+crescent.seurat.obj.T_cells.integrated.no_gdT
+# 34884 features across 12977 samples within 3 assays 
+```
+
+## cluster
+
+```{r}
+Seurat::DefaultAssay(crescent.seurat.obj.T_cells.integrated.no_gdT) = "SCT"
+crescent.seurat.obj.T_cells.integrated.no_gdT = Seurat::FindNeighbors(object = crescent.seurat.obj.T_cells.integrated.no_gdT, dims = 1:npcs) # default="20"
+
+clust_resolution = 1
+Seurat::DefaultAssay(crescent.seurat.obj.T_cells.integrated.no_gdT) = "integrated"
+crescent.seurat.obj.T_cells.integrated.no_gdT = Seurat::FindClusters(object = crescent.seurat.obj.T_cells.integrated.no_gdT, resolution = clust_resolution) # default="1"
+```
+
+## saveRDS() 
+
+```{r}
+crescent.seurat.obj.T_cells.integrated.no_gdT %>% saveRDS(., file.path(dir.out.data, paste0(PROJ_BATCH, "crescent.seurat.obj.T_cells.integrated.no_gdT.Rds")))
+```
+
+# manually annotate
+
+## readRDS() <------ restart here
+
+- cluster numbering changes each time, reload below to run rest of script
+
+```{r}
+crescent.seurat.obj.T_cells.integrated.no_gdT = readRDS(file.path(dir.out.data, paste0(PROJ_BATCH, "crescent.seurat.obj.T_cells.integrated.no_gdT.Rds")))
+crescent.seurat.obj.T_cells.integrated.no_gdT %>% dim() # [1]  2000 12980
+crescent.seurat.obj.T_cells.integrated.no_gdT@meta.data
+DimPlot(crescent.seurat.obj.T_cells.integrated.no_gdT, reduction = "umap", group.by = "seurat_clusters", label = TRUE, repel = TRUE)
+DimPlot(crescent.seurat.obj.T_cells.integrated.no_gdT, reduction = "umap", group.by = "dataset")
+```
+
+## DotPlot()
+
+```{r, fig.width=10, fig.height=6}
+dotplot_clusters = 
+  c("16",                 ## T fh
+    "10",                 ## T helper17
+    "17", "6", "3",       ## T regs
+    "14",                 ## T regs naive
+    "1",                  ## T naive
+    "7", "2",             ## T memory
+    "8",                  ## T eff mem
+    "11",                 ## T activated
+    "5",                  ## T activated / exhausted
+    "0",                  ## T less activated / exhausted
+    "12",                 ## T even less activated / exhausted
+    "15", "4",            ## T ex proliferative 1
+    "9",                  ## T ex proliferative 2
+    "19",                 ## another effector?
+    "18",                 ## NK T
+    "13"                  ## typeI IFN T cells
+  )
+
+dotplot_markers = c("CD3D", "CD3G", "CD3E", "CD8A", "CD8B", "CD4",
+                    "DUSP4", "CXCL13", "NR3C1", "CD200", "PTPN13", "BTLA",                  ## T fh
+                    "CCL5", "CXCR6",                                                        ## T helper17
+                    "FOXP3", "IL2RA", "CTLA4", "IL32", "TNFRSF18", "ICOS",                  ## T regs
+                    "PIK3IP1", "RTKN2", "CD69", "LEF1", "SELL",                             ## T regs naive
+                    "IL7R", "CCR7", "TCF7", "CXCR4",                                        ## T naive
+                    
+                    "GZMB", "GZMH", "GZMK", "CD27",                                         ## T effector memory
+                    "ITGB1", "FGFBP2", "KLRD1", "PVRIG",                                    ## T effector memory 
+                    
+                    "JUN", "FOS", "TNF", "IFNG",                                            ## T activated
+                    "PRF1", "GNLY", "LAG3", "HAVCR2", "PDCD1", "TIGIT", "ENTPD1", "ITGAE",  ## T activated - exhausted
+                                                                                            ## less activated - exhausted
+                    
+                    "TOP2A", "UBE2C", "ASPM", "BIRC5", "MKI67", "RRM2", "KIFC1", "CCNA2", "AURKB", "GTSE1", 
+                    "CDK4", "PKMYT1", "UHRF1", "ASF1B", "TYMS", "PCLAF", "LDHB", "CLSPN", "TK1", 
+                    
+                    "FCGR3A", "RGS10", "CAPG", "HLA-DQB1", "HLA-DRA", "HLA-DQA1", "HLA-DPA1", ## myeloid DCs
+                    "FYB1", "ANXA1", "STAT1", "IFIT1", "IFIT3", "MX1"
+                    )
+dotplot_markers %>% length() # [1] 81
+
+col.markers =
+  c(rep("black", 6),
+    rep(colours_n40[1], 6),
+    rep(colours_n40[2], 2),
+    rep(colours_n40[3], 6),
+    rep(colours_n40[4], 5),
+    rep(colours_n40[5], 4),
+    rep(colours_n40[6], 8),
+    rep(colours_n40[7], 4),
+    rep(colours_n40[8], 8),
+    rep(colours_n40[9], 10),
+    rep(colours_n40[10], 9),
+    rep(colours_n40[11], 7),
+    rep(colours_n40[13], 6)
+    )
+col.markers %>% length() # [1] 81
+
+sccore::dotPlot(count.matrix = crescent.seurat.obj.T_cells.integrated.no_gdT@assays$SCT@data %>% as.matrix() %>% t(), 
+                cell.groups = crescent.seurat.obj.T_cells.integrated.no_gdT@meta.data$seurat_clusters %>% factor() %>% setNames(crescent.seurat.obj.T_cells.integrated.no_gdT %>% colnames()),
+                markers = dotplot_markers,
+                col.min = -1,
+                # dot.min = 25, 
+                marker.colour = col.markers,
+                # cluster.colour = col.clusters,
+                # cols=c("blue","red")
+                cols=c("white","red")
+                ) + 
+  # coord_flip() + 
+  scale_y_discrete(limits = rev(dotplot_clusters)) + 
+  scale_x_discrete(limits = dotplot_markers)
+
+ggsave(file.path(dir.out.figure.qc, "T_cells.dotplot.markers.png"), device = "png", width = 16, height = 5, units = "in", dpi = 300, bg = "white")
+```
+
+## FindAllMarkers()
+
+```{r}
+crescent.seurat.obj.T_cells.integrated.no_gdT = crescent.seurat.obj.T_cells.integrated.no_gdT %>% Seurat::PrepSCTFindMarkers(object = ., assay = "SCT")
+# Found 11 SCT models. Recorrecting SCT counts using minimum median counts: 3144.5
+
+rownames(crescent.seurat.obj.T_cells.integrated.no_gdT) %>% length() # [1] 2000
+crescent.seurat.obj.T_cells.integrated.no_gdT = crescent.seurat.obj.T_cells.integrated.no_gdT %>% Seurat::ScaleData(object = ., features = rownames(crescent.seurat.obj.T_cells.integrated.no_gdT))
+crescent.seurat.obj.T_cells.integrated.no_gdT@assays$SCT@scale.data %>% dim() # [1]  2000 12980
+crescent.seurat.obj.T_cells.integrated.no_gdT@meta.data
+
+crescent.seurat.obj.T_cells.integrated.no_gdT.allmarkers.cluster = crescent.seurat.obj.T_cells.integrated.no_gdT %>% Seurat::FindAllMarkers(object = ., assay = "SCT")
+crescent.seurat.obj.T_cells.integrated.no_gdT.allmarkers.cluster
+
+crescent.seurat.obj.T_cells.integrated.no_gdT.top20markers.cluster = crescent.seurat.obj.T_cells.integrated.no_gdT.allmarkers.cluster %>% group_by(cluster) %>% top_n(20, avg_log2FC)
+crescent.seurat.obj.T_cells.integrated.no_gdT.top20markers.cluster %>% 
+  dplyr::select(cluster, gene) %>% 
+  pivot_wider(names_from = cluster, values_from = gene) %>% 
+  unchop(everything()) %>% print.data.frame()
+  
+#              0       1        2        3        4       5        6        7       8        9        10       11       12      13     14      15      16      17       18       19
+# 1         GNLY    IL7R     GZMK    FOXP3 HIST1H4C    CCL4  TNFRSF4     GZMK  FGFBP2      DUT    PTPN13   HSPA1B    ATXN1   IFIT1  FOXP3   UBE2C   IGFL2   IKZF2     NFIB   FCER1G
+# 2         CCL5   ANXA1    CXCR4     IL32   TUBA1B  CCL4L2 TNFRSF18     GZMH    HOPX    STMN1    CXCL13   HSPA1A    MBNL1   IFIT2   LEF1    ASPM  PTPN13   PLCL1   GABRG3     CST3
+# 3         GZMB    CCR7     AOAH    RTKN2    STMN1    CCL3    FOXP3     CCL5    GNLY     TYMS      IL21   DNAJB1     CBLB   IFIT3    LTB   CDC20    GNG4 IL12RB2   COL4A1   TYROBP
+# 4         GZMA    TPT1     ENC1   MAGEH1     TUBB    GZMB    IL2RA     AOAH  ZNF683    PCLAF     PDE7B HSP90AA1    PTPRJ   RSAD2   SELL   CCNB1  IGFBP4 PHACTR2     CPA3      LYZ
+# 5         PRF1  EEF1A1    DUSP2    IKZF2 HIST1H1B    IFNG     BATF   PLAAT4   ANXA1     RRM2     KLRB1     CD69     SIK3     MX2   FCMR   CCNB2  TNFSF8   IL2RA    TPSB2    CXCL9
+# 6         CTSW  PABPC1   TUBA4A  TNFRSF4 HIST1H1E    NKG7    IL1R2   GIMAP7    XCL1     MCM7  TNFRSF18      JUN    PTPRC     MX1   CCR4    PLK1     NMB   PTPRJ   CXCL10   RNASE1
+# 7        ITGAE     LTB     CST7   TBC1D4    HMGB2    LAG3     CCR8   GIMAP4 S100A10     PCNA    MFHAS1    HSPA8 PPP1R16B   HERC5   KLF2    TPX2   TSHZ2   TRAF3    ICAM1     C1QA
+# 8         NKG7    KLF2    CRTAM   CARD16    MKI67 TNFRSF9    CTLA4     HCST    CD52      TK1      CSF2    HSPA6     CMIP   ISG15  FXYD5   TOP2A   CD200   SMYD3   IGFBP7     C1QC
+# 9         CD8A ZFP36L2    YPEL5     BATF HIST1H1C  HAVCR2    LAIR2     NKG7    NKG7     MCM5     NR3C1   DNAJA1    PDE3B   ISG20  RTKN2   CENPF  CXCL13   FOXN3   TPSAB1     C1QB
+# 10        ACP5    FTH1   PIK3R1    IL2RA    HMGN2    PRF1      PKM     CST7   TGFB1   RANBP1     FKBP5    DUSP1    PRKCH    OAS1    MAL   MKI67   PDE7B TNFRSF4     IER3 HLA-DQB1
+# 11      GALNT2  EEF1B2    ITM2C     CCR6 HIST1H1D    PTMS   SYNGR2    PVRIG    IL7R     PPIA     RDH10    HSPH1 ARHGAP15    IFI6  EPB41  NUSAP1    TCF7   MALT1     EGR1     APOE
+# 12        CD63  SLC2A3     YBX3      LTB HIST1H3B   CRTAM     IL32     TC2N    IER2     TUBB      SNX9    NR4A1   CHST11    IRF7 TTC39C   PTTG1   FAAH2    CASK     KRT5    IFI30
+# 13     ALOX5AP     FOS     RGCC    CTLA4     RRM2    CD8A    MALT1    LIME1 GADD45B    GAPDH    SPOCK2     FOSB      FYN  IFITM1 SAMHD1   HMGB2   FKBP5 LDLRAD4 C11orf96  HLA-DRA
+# 14        CSF1    JUNB   TNFSF9 TNFRSF18 HIST1H3D  CXCL13     TYMP     CD8B   LITAF   TUBA1B KIAA0319L     KLF6 RABGAP1L  IFI44L  SYNE2   STMN1   NR3C1    ZEB1   COL6A2    CCL18
+# 15       KRT86    CD55    MYADM     SAT1    HMGB1    GZMH TNFRSF1B    RESF1    GZMH     TPI1     DUSP4 HSP90AB1     ZEB2  SAMD9L  YWHAB ARL6IP1   SESN3      GK     SOD2     CD74
+# 16    HLA-DRB5  GPR183    NR4A2   PBXIP1   NUSAP1    GNLY     PIM2     CD52     FOS    HMGB1    MAP3K8      FOS    IKZF3    OASL   TNIK   HMGN2   THADA   FOXO1      FOS HLA-DQA1
+# 17        GZMH   CXCR4   ZNF331    MALT1    UBE2C    CCL5     ICOS APOBEC3G  IFITM2    HMGN2   FAM107B     EGR1   BICDL1   STAT1   IL32    TUBB    G0S2    BATF   IFITM3 HLA-DRB1
+# 18       PLPP1   ZFP36   CEMIP2     ICOS    CENPF    GZMA  GADD45A HLA-DPB1  TUBA4A    H2AFZ     HSPB1   NFKBIA   AKAP13 TNFSF10 SMCHD1  TUBA1B    CCR7   FAAH2    KRT17     CTSB
+# 19       CXCR6    LMNA    TGFB1   ZFAND5    TOP2A TRBV4-1     SAT1     CD8A     TNF    FABP5    HSPA1A    HSPE1    CAMK4    MT2A   JUNB   UBE2S      GK    SNX9   COL1A1 HLA-DPA1
+# 20 TRAV38-2DV8    RGCC MTRNR2L8 TRBV20-1     TYMS    XCL2      LTB    ITM2C   TXNIP HIST1H4C  HSP90AA1      TNF   CEMIP2    SAT1   HPGD  LGALS1 FAM107B  RNF213   S100A2      FTL
+```
+
+### DoHeatmap()
+
+```{r, fig.width=12, fig.height=12}
+Seurat::DoHeatmap(object = crescent.seurat.obj.T_cells.integrated.no_gdT, 
+                  assay = "SCT", 
+                  slot = "scale.data",
+                  # group.by = "singleR.labels.revised2", 
+                  features = crescent.seurat.obj.T_cells.integrated.no_gdT.top20markers.cluster$gene
+) + 
+  guides(color="none")
+```
+
+## annotate T cells
+
+```{r}
+crescent.seurat.obj.T_cells.integrated.no_gdT.metadata = crescent.seurat.obj.T_cells.integrated.no_gdT@meta.data %>% rownames_to_column(var="sample_barcode")
+crescent.seurat.obj.T_cells.integrated.no_gdT.metadata$seurat_clusters %>% table()
+crescent.seurat.obj.T_cells.integrated.no_gdT.metadata
+
+crescent.seurat.obj.T_cells.integrated.no_gdT.metadata2 = 
+  crescent.seurat.obj.T_cells.integrated.no_gdT.metadata %>% 
+  mutate(cluster_annot = case_when(
+    seurat_clusters == "16" ~ "T_fh",
+    seurat_clusters == "10" ~ "T_h17",
+    seurat_clusters %in% c("17", "6", "3") ~ "T_regs",
+    seurat_clusters == "14" ~ "T_regs_naive",
+    seurat_clusters == "1" ~ "T_naive",
+    seurat_clusters %in% c("7", "2") ~ "T_mem",
+    seurat_clusters == "8" ~ "T_eff_mem",
+    seurat_clusters == "11" ~ "T_activated",
+    seurat_clusters == "5" ~ "T_ex_activated",
+    seurat_clusters == "0" ~ "T_ex_semi_activated",
+    seurat_clusters == "12" ~ "T_ex_low_activated",
+    seurat_clusters %in% c("15", "4") ~ "T_ex_proliferative_1",
+    seurat_clusters == "9" ~ "T_ex_proliferative_2",
+    seurat_clusters == "19" ~ "DC_TCR",
+    seurat_clusters == "18" ~ "NK_T",
+    seurat_clusters == "13" ~ "typeI_IFN_Tcells",
+    TRUE ~ "ERROR"
+  ),
+  cluster_annot = factor(cluster_annot, levels = c("T_fh", "T_h17", "T_regs", "T_regs_naive", 
+                                                   "T_naive", "T_mem", "T_eff_mem", "T_activated", "T_ex_activated", 
+                                                   "T_ex_semi_activated", "T_ex_low_activated", "T_ex_proliferative_1", 
+                                                   "T_ex_proliferative_2", "DC_TCR", "NK_T", "typeI_IFN_Tcells"))) %>% 
+  dplyr::select(sample_barcode, orig.ident, dataset, singleR.labels, singleR.labels.revised, cluster_annot, everything())
+crescent.seurat.obj.T_cells.integrated.no_gdT.metadata2$cluster_annot %>% table()
+
+crescent.seurat.obj.T_cells.integrated.no_gdT@meta.data = 
+  crescent.seurat.obj.T_cells.integrated.no_gdT.metadata2 %>% column_to_rownames(var="sample_barcode")
+```
+
+### DimPlot()
+
+```{r}
+Seurat::DimPlot(crescent.seurat.obj.T_cells.integrated.no_gdT, reduction = "umap", group.by = "seurat_clusters", label = T, repel = T) + #, split.by = "dataset", ncol = 4) + 
+  Seurat::NoLegend() + 
+  scale_color_manual(values = colours_n40)
+# ggsave(file.path(dir.out.figure.analysis, "IRIS.annotation_T_cells_subclustering.seurat_clusters.pdf"), device = "pdf", width = 10, height = 6, units = "in")
+
+Seurat::DimPlot(crescent.seurat.obj.T_cells.integrated.no_gdT, reduction = "umap", group.by = "cluster_annot", label = T, repel = T) + #, split.by = "dataset", ncol = 4) + 
+  Seurat::NoLegend() +
+  scale_color_manual(values = colours_n40) +
+  labs(title = "IRIS T cell subclustering (manual annotation)")
+# ggsave(file.path(dir.out.figure.analysis, "IRIS.annotation_T_cells_subclustering.cluster_annot.pdf"), device = "pdf", width = 10, height = 6, units = "in")
+```
+
+# saveRDS()
+
+```{r}
+crescent.seurat.obj.T_cells.integrated.no_gdT %>% saveRDS(., file.path(dir.out.data, paste0(PROJ_BATCH, ".crescent.seurat.obj.T_cells.integrated.no_gdT.annotated.Rds")))
+```
+
+<br>
+
+# EOF

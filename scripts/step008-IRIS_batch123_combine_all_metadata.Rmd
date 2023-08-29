@@ -1,0 +1,246 @@
+---
+title: ""
+author: "Ming"
+date: "`r format(Sys.time(), '%Y_%m_%d_%H_%M')`"
+---
+
+```{r setup, include=FALSE}
+# knitr::opts_chunk$set(eval = FALSE)      ## no run
+# knitr::opts_chunk$set(include = FALSE)   ## yes run, no code, no output
+knitr::opts_chunk$set(echo = TRUE)         ## yes run, no code, yes output ( for figures )
+knitr::opts_chunk$set(results = 'hide')    ## yes run, yes code, no output
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(warning = FALSE)
+suppressPackageStartupMessages(library(tidyverse))
+suppressPackageStartupMessages(library(ggplot2))
+'%ni%' = Negate('%in%')
+# options(scipen = 999)       # decimals
+# options(scipen = 0)         # sci notation
+# options(max.print=999999)
+
+dir.ref                 = "/Users/minghan/bioinfoproj/references"
+dir.clin                = "/Users/minghan/GDrive_minghanpughlab/PughLabPMH/_projects/IRIS/_clin"
+dir.data                = "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/data"
+dir.out.data            = "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/out_data"
+dir.out.figure.analysis = "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/out_figures_analysis"
+dir.out.figure.qc       = "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/out_figures_qc"
+dir.out.data.gliphii    = "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/out_GLIPHII"
+
+PROJ = "IRIS"
+PROJ_BATCH = "IRIS_batch123"
+
+colours_n40 = 
+  c("dodgerblue2", "#E31A1C", "green4", "#6A3D9A", "#FF7F00", 
+    "gold1", "gray70", "#C1645C", "skyblue2", "#FB9A99", "palegreen2", 
+    "#CAB2D6", "#FDBF6F", "#D46A43", "khaki2", "maroon", 
+    "orchid1", "deeppink1", "blue1", "steelblue4", "darkturquoise", 
+    "green1", "yellow4", "yellow3", "darkorange4", "brown",
+    "#5C9A5C", "#CC8BAD", "#B8782A", "#546C9D", "#459E6F",
+    
+    "chocolate4", "chartreuse4", "burlywood", "deeppink4", "lightslateblue",
+    "firebrick", "mintcream", "mediumpurple3", "springgreen4", "slateblue4")
+
+library(Seurat)
+```
+
+# read in data
+
+## clin
+
+```{r}
+clin.df = 
+  readxl::read_xlsx(file.path(dir.clin, "IRIS_GSK_Clinical_Data_2023_07_25.xlsx"), sheet = "IRIS_GSK_clin", na = "NA") %>% 
+  mutate(COHORT = PROJ) %>% 
+  mutate(TobaccoUse = case_when(TobaccoUse == "Yes" ~ "YesTobacco", TobaccoUse == "No" ~ "NoTobacco", TRUE ~ TobaccoUse),
+         p16_IHC    = case_when(p16_IHC == "Pos" ~ "PosHPV",        p16_IHC == "Neg" ~ "NegHPV",     TRUE ~ p16_IHC)) %>% 
+  mutate(Histology = Histology %>% gsub(" ", "", .),
+         Treatment = Treatment %>% gsub(" ", "", .),
+         PFS = PFS %>% round(2)) %>% 
+  dplyr::select(-Patient_ID_orig)
+# clin.df %>% dim() # [1] 12  18
+clin.df
+```
+
+## seurat obj
+
+```{r}
+crescent.seurat.obj.T_cells.integrated.no_gdT.annot = readRDS(file.path(dir.out.data, paste0(PROJ_BATCH, ".crescent.seurat.obj.T_cells.integrated.no_gdT.annotated.Rds")))
+crescent.seurat.obj.T_cells.integrated.no_gdT.annot
+# 34884 features across 12980 samples within 3 assays 
+
+crescent.seurat.obj.singleR.encode = readRDS(file.path(dir.out.data, paste0(PROJ_BATCH, ".crescent.seurat.obj.singleR.encode.Rds")))
+crescent.seurat.obj.singleR.encode
+# 38390 features across 45964 samples within 3 assays 
+
+gdT_cells.vec = readRDS(file.path(file.path(dir.out.data, paste0(PROJ_BATCH, ".gdT_cells.vec.Rds"))))
+gdT_cells.vec %>% length() # [1] 85
+```
+
+# --------------------------------------------
+
+# add T cell annotations
+
+## wrangle metadata
+
+```{r}
+crescent.seurat.obj.singleR.encode.metadata = 
+  crescent.seurat.obj.singleR.encode@meta.data %>% rownames_to_column(var="sample_barcode")
+crescent.seurat.obj.singleR.encode.metadata
+crescent.seurat.obj.T_cells.integrated.no_gdT.metadata.annot = 
+  crescent.seurat.obj.T_cells.integrated.no_gdT.annot@meta.data %>% rownames_to_column(var="sample_barcode") %>% 
+  dplyr::rename("seurat_clusters_Tcells"="seurat_clusters") %>% 
+  dplyr::select(sample_barcode, cluster_annot, seurat_clusters_Tcells)
+crescent.seurat.obj.T_cells.integrated.no_gdT.metadata.annot
+
+crescent.seurat.obj.singleR.encode.metadata2 = 
+  crescent.seurat.obj.singleR.encode.metadata %>% 
+  left_join(., crescent.seurat.obj.T_cells.integrated.no_gdT.metadata.annot, by=c("sample_barcode")) %>% 
+  dplyr::select(sample_barcode, orig.ident, dataset, cluster_annot, seurat_clusters_Tcells, everything()) %>% 
+  dplyr::rename("annot_combined" = "cluster_annot") %>% 
+  mutate(annot_combined = if_else(sample_barcode %in% gdT_cells.vec, "gdT_cells",
+                                  if_else(is.na(annot_combined), singleR.labels.revised, annot_combined))) %>% 
+  mutate(annot_combined = if_else(annot_combined %in% c("Skeletal muscle", "Smooth muscle"), "Muscle_cells", annot_combined)) %>% 
+  mutate(annot_combined = if_else(annot_combined %in% c("Neutrophils_TCR"), "Neutrophils", annot_combined))
+  
+crescent.seurat.obj.singleR.encode.metadata2$annot_combined %>% table() %>% as.data.frame()
+crescent.seurat.obj.singleR.encode@meta.data = crescent.seurat.obj.singleR.encode.metadata2 %>% column_to_rownames(var = "sample_barcode")
+crescent.seurat.obj.singleR.encode@meta.data
+```
+
+## DimPlot()
+
+```{r}
+Seurat::DimPlot(crescent.seurat.obj.singleR.encode, reduction = "umap", group.by = "annot_combined", label = T, repel = T) + #, split.by = "dataset", ncol = 4) + 
+  Seurat::NoLegend() + 
+  scale_color_manual(values = colours_n40) + 
+  labs(title = "IRIS cell annotations - all cells")
+# ggsave(file.path(dir.out.figure.analysis, "IRIS.annotation_all_cells.pdf"), device = "pdf", width = 10, height = 8, units = "in")
+```
+
+# add GLIPHII
+
+```{r}
+community_method = "community_walktrap_steps_60"
+GLIPHII_Community_stats.annot.withBarcodes.long.dedupd = 
+  read.table(file.path( dir.out.data.gliphii, 
+                        paste0(PROJ, ".GLIPHII_CDR3_", community_method, ".stats_and_specificity.withBarcodes.long.dedupd.csv") ), 
+             header = T, sep = ",") %>% 
+  mutate(sample_barcode = sample_barcode %>% gsub("-", "_", .))
+GLIPHII_Community_stats.annot.withBarcodes.long.dedupd$sample_barcode %>% unique() %>% length() # [1] 2046
+GLIPHII_Community_stats.annot.withBarcodes.long.dedupd$Community_specificity %>% table() %>% as.data.frame()
+GLIPHII_Community_stats.annot.withBarcodes.long.dedupd
+
+GLIPHII_Community_stats.annot.withBarcodes.long.dedupd.tumor_assoc = 
+  GLIPHII_Community_stats.annot.withBarcodes.long.dedupd %>% 
+  dplyr::filter(Community_specificity %in% c("HomoSapiens", "HomoSapiens,MDavis", "MDavis"))
+
+crescent.seurat.obj.singleR.encode.meta.data = crescent.seurat.obj.singleR.encode@meta.data
+crescent.seurat.obj.singleR.encode.meta.data %>% dim() # [1] 12980    66
+crescent.seurat.obj.singleR.encode.meta.data
+
+dplyr::intersect(crescent.seurat.obj.singleR.encode.meta.data %>% rownames(), 
+                 GLIPHII_Community_stats.annot.withBarcodes.long.dedupd$sample_barcode) %>% length() # [1] 1846
+
+crescent.seurat.obj.singleR.encode.meta.data2 = 
+  crescent.seurat.obj.singleR.encode.meta.data %>% 
+  rownames_to_column(var="sample_barcode") %>% 
+  left_join(., 
+            GLIPHII_Community_stats.annot.withBarcodes.long.dedupd %>% dplyr::select(-clin_params), 
+            by=c("sample_barcode"="sample_barcode")) %>% 
+  mutate(Community_specificity_lean = 
+           if_else(Community_specificity %in% c("HomoSapiens", "HomoSapiens,MDavis", "MDavis"), 
+                   "tumor_associated", 
+                   if_else(!is.na(Community_specificity), "viral_or_nonspecific", "no_GLIPHII_results"))) %>% 
+  mutate(Community_specificity_lean2 = 
+           case_when(Community_specificity == "HomoSapiens" ~ "tumor_associated_HomoSapiens",
+                     Community_specificity == "HomoSapiens,MDavis" ~ "tumor_associated_HomoSapiens_MDavis",
+                     Community_specificity == "MDavis" ~ "tumor_associated_MDavis",
+                     TRUE ~ Community_specificity_lean)) %>% 
+  # separate(col = "clin_params", into = c("Timepoint", "Cohort", "Histology", "Resistance", "p16_IHC", "PD_L1", "TMB", "MSI", "TobaccoUse", "BR1", "PFS", "OS"), sep = "_")
+  dplyr::select(sample_barcode, dataset, Community_specificity_lean, Community_specificity_lean2, annot_combined, seurat_clusters, TRB_expanded, TRB_cloneSize, Proportion_TRB, everything())
+
+crescent.seurat.obj.singleR.encode.meta.data2 %>% 
+  dplyr::filter(!is.na(Community_specificity)) %>% 
+  dplyr::select(sample_barcode, Community_specificity, Community_specificity_lean, everything()) %>% 
+  # dplyr::filter(Community_specificity %in% c("EBV,MDavis", "HomoSapiens", "HomoSapiens,HPV,MDavis", 
+  #                                            "HomoSapiens,MDavis", "HPV,MDavis", "MDavis", "Patient_intrinsic")) %>% 
+  dplyr::select(dataset, Community_specificity_lean) %>% table()
+
+#                 Community_specificity_lean
+# dataset          tumor_associated viral_or_nonspecific
+#   IRS_0004_A_003               49                  123
+#   IRS_0014_P_014                6                    6
+#   IRS_002_A_001                88                  238
+#   IRS_0023_P_023              196                  130
+#   IRS_0025_A_025                8                    3
+#   IRS_0032_A_032               22                    7
+#   IRS_0038_P_038              102                   51
+#   IRS_0055_P_055              210                  105
+#   IRS_0056_P_056               22                    9
+#   IRS_008_P_008                 9                   14
+#   IRS_015_A_015               327                  121
+
+crescent.seurat.obj.singleR.encode.meta.data2
+```
+
+# add clin
+
+```{r}
+crescent.seurat.obj.singleR.encode.meta.data3 = 
+  crescent.seurat.obj.singleR.encode.meta.data2 %>% 
+  left_join(., 
+            clin.df %>% 
+              mutate(Patient_ID = Patient_ID %>% gsub("-", "_", .)) %>% 
+              rename_with(.cols = everything(), .fn = ~ gsub("^", "clin_", .x)), 
+            by=c("dataset"="clin_Patient_ID")) %>% 
+  dplyr::select(sample_barcode, dataset, clin_ResistanceType, clin_p16_IHC, everything())
+crescent.seurat.obj.singleR.encode.meta.data3
+```
+
+# add CITEseq
+
+```{r}
+dsb.norm.all = readRDS(file.path(dir.out.data, paste0(PROJ_BATCH, ".dsb.norm.all.Rds")))
+# dsb.norm.all %>% dim() # [1]   137 49539
+# dsb.norm.all[1:3,1:3]
+
+dsb.norm.all.df = 
+  dsb.norm.all %>% as.matrix() %>% t() %>% as.data.frame()
+# dsb.norm.all.df
+
+dsb.norm.all.df %>% colnames() %>% gsub(".{17}$", "", .) %>% unique() %>% sort() %>% dput()
+c("IRS_0004_A_003", "IRS_0014_P_014", "IRS_002_A_001", "IRS_0023_P_023", "IRS_0038_P_038", "IRS_0055_P_055", "IRS_015_A_015")
+
+crescent.seurat.obj.singleR.encode.meta.data4 = 
+  crescent.seurat.obj.singleR.encode.meta.data3 %>% 
+  left_join(., 
+            dsb.norm.all.df %>% 
+              rename_with(.cols = everything(), .fn = ~ gsub("^", "CITE_", .x)) %>% 
+              rownames_to_column(var = "sample_barcode"),
+            by=c("sample_barcode")) %>% 
+  mutate(CITEseq = if_else(dataset %in% c("IRS_0004_A_003", "IRS_0014_P_014", "IRS_002_A_001", "IRS_0023_P_023", "IRS_0038_P_038", "IRS_0055_P_055", "IRS_015_A_015"), "yesCITEseq", "noCITEseq")) %>% 
+  dplyr::select(dataset, CITEseq, everything()) # %>% dplyr::pull(CITEseq) %>% table()
+
+crescent.seurat.obj.singleR.encode.meta.data4 %>% dim() # [1] 45964   228
+```
+
+# --------------------------------------------
+
+# saveRDS()
+
+```{r}
+crescent.seurat.obj.singleR.encode@meta.data = crescent.seurat.obj.singleR.encode.meta.data4 %>% column_to_rownames(var="sample_barcode")
+crescent.seurat.obj.singleR.encode@meta.data %>% dim() # [1] 45964   227
+
+crescent.seurat.obj.singleR.encode %>% saveRDS(., file.path(dir.out.data, paste0(PROJ_BATCH, ".crescent.seurat.obj.singleR.encode.all_metadata_attached.Rds")))
+```
+
+```{r}
+crescent.seurat.obj.singleR.encode.scmulti = readRDS(file.path(dir.out.data, paste0(PROJ_BATCH, ".crescent.seurat.obj.singleR.encode.all_metadata_attached.Rds")))
+crescent.seurat.obj.singleR.encode.scmulti@meta.data
+```
+
+
+<br>
+
+# EOF

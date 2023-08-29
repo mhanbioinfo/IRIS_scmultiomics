@@ -1,0 +1,584 @@
+---
+title: "2023_08_23_1011-IRIS_batch123_scGEX_load_crescent_DoubletFinder_annotate"
+author: "Ming"
+date: "`r format(Sys.time(), '%Y_%m_%d_%H_%M')`"
+---
+
+```{r setup, include=FALSE}
+# knitr::opts_chunk$set(eval = FALSE)      ## no run
+# knitr::opts_chunk$set(include = FALSE)   ## yes run, no code, no output
+knitr::opts_chunk$set(echo = TRUE)         ## yes run, no code, yes output ( for figures )
+knitr::opts_chunk$set(results = 'hide')    ## yes run, yes code, no output
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(warning = FALSE)
+suppressPackageStartupMessages(library(tidyverse))
+suppressPackageStartupMessages(library(ggplot2))
+'%ni%' = Negate('%in%')
+# options(scipen = 999)       # decimals
+# options(scipen = 0)         # sci notation
+# options(max.print=999999)
+
+dir.ref                 = "/Users/minghan/bioinfoproj/references"
+dir.clin                = "/Users/minghan/GDrive_minghanpughlab/PughLabPMH/_projects/IRIS/_clin"
+dir.data                = "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/data"
+dir.out.data            = "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/out_data"
+dir.out.figure.analysis = "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/out_figures_analysis"
+dir.out.figure.qc       = "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/out_figures_qc"
+
+PROJ = "IRIS"
+PROJ_BATCH = "IRIS_batch123"
+
+colours_n40 = 
+  c("dodgerblue2", "#E31A1C", "green4", "#6A3D9A", "#FF7F00", 
+    "gold1", "gray70", "#C1645C", "skyblue2", "#FB9A99", "palegreen2", 
+    "#CAB2D6", "#FDBF6F", "#D46A43", "khaki2", "maroon", 
+    "orchid1", "deeppink1", "blue1", "steelblue4", "darkturquoise", 
+    "green1", "yellow4", "yellow3", "darkorange4", "brown",
+    "#5C9A5C", "#CC8BAD", "#B8782A", "#546C9D", "#459E6F",
+    
+    "chocolate4", "chartreuse4", "burlywood", "deeppink4", "lightslateblue",
+    "firebrick", "mintcream", "mediumpurple3", "springgreen4", "slateblue4")
+
+library(Seurat)
+```
+
+# read in data
+
+## seurat.obj
+
+```{r}
+crescent.seurat.obj = readRDS(file.path(dir.out.data, "../out_crescent/IRIS_batch123_noIRS0070_newREF/crescent.SEURAT_DGE.rds"))
+# crescent.seurat.obj
+# 39388 features across 48374 samples within 3 assays
+crescent.seurat.obj@meta.data$dataset %>% unique() %>% sort() %>% length() # cat(., sep="\n")
+# [1] 11
+```
+
+### explore seurat obj
+
+```{r}
+crescent.seurat.obj@assays$RNA
+# Assay data with 18433 features for 48374 cells
+# First 10 features:
+#  SAMD11, NOC2L, KLHL17, PLEKHN1, PERM1, HES4, ISG15, AGRN, C1orf159, TTLL10 
+
+crescent.seurat.obj@assays$SCT
+# SCTAssay data with 17955 features for 48374 cells, and 11 SCTModel(s) 
+# First 10 features:
+#  SAMD11, NOC2L, KLHL17, PLEKHN1, HES4, ISG15, AGRN, C1orf159, TTLL10, TNFRSF18 
+crescent.seurat.obj@assays$SCT@data %>% min() # [1] 0
+crescent.seurat.obj@assays$SCT@data %>% max() # [1] 9.401291
+crescent.seurat.obj@assays$SCT@scale.data %>% min() # [1] -7.071058
+crescent.seurat.obj@assays$SCT@scale.data %>% max() # [1] 19.33342
+
+crescent.seurat.obj@assays$integrated
+# SCTAssay data with 3000 features for 48374 cells, and 1 SCTModel(s) 
+# Top 10 variable features:
+#  S100A2, GNLY, CCL4, KRT5, GZMB, S100A8, COL1A1, KRT17, APOE, HLA-DRA 
+crescent.seurat.obj@assays$integrated@SCTModel.list
+crescent.seurat.obj@assays$integrated@var.features %>% length() # [1] 3000
+crescent.seurat.obj@assays$integrated@data %>% min() # [1] -18.05736
+crescent.seurat.obj@assays$integrated@data %>% max() # [1] 33.95997
+crescent.seurat.obj@assays$integrated@scale.data %>% min() # [1] -17.95295
+crescent.seurat.obj@assays$integrated@scale.data %>% max() # [1] 10
+
+crescent.seurat.obj@active.assay # [1] "integrated"
+crescent.seurat.obj@reductions
+# $pca
+# A dimensional reduction object with key PC_ 
+#  Number of dimensions: 50 
+#  Projected dimensional reduction calculated:  FALSE 
+#  Jackstraw run: FALSE 
+#  Computed using assay: integrated 
+# 
+# $umap
+# A dimensional reduction object with key UMAP_ 
+#  Number of dimensions: 2 
+#  Projected dimensional reduction calculated:  FALSE 
+#  Jackstraw run: FALSE 
+#  Computed using assay: integrated 
+# 
+# $tsne
+# A dimensional reduction object with key tSNE_ 
+#  Number of dimensions: 2 
+#  Projected dimensional reduction calculated:  FALSE 
+#  Jackstraw run: FALSE 
+#  Computed using assay: integrated 
+```
+
+### rename cells
+
+```{r}
+## get new cell vector
+# crescent.seurat.obj@meta.data$dataset %>% unique() %>% sort()
+crescent.seurat.obj.meta.data = crescent.seurat.obj@meta.data
+crescent.seurat.obj.meta.data$dataset %>% unique() %>% cat(., sep = "\n")
+
+crescent.seurat.obj.meta.data2 =
+  crescent.seurat.obj.meta.data %>% 
+  rownames_to_column(var="sample_barcode") %>% 
+  mutate(dataset = gsub("_filtered_feature_bc_matrix", "", dataset),
+         EachDatasetGlobalCellClusters = gsub("_filtered_feature_bc_matrix", "", EachDatasetGlobalCellClusters)) %>% 
+  mutate(sample_barcode = gsub(".*_", "", sample_barcode),
+         sample_barcode = paste0(dataset, "_", sample_barcode)) %>% 
+  column_to_rownames(var="sample_barcode")
+crescent.seurat.obj.meta.data2$dataset %>% unique() %>% cat(., sep = "\n")
+crescent.seurat.obj.meta.data2
+
+## rename cells
+crescent.seurat.obj.cell_renamed = 
+  Seurat::RenameCells(crescent.seurat.obj, new.names = rownames(crescent.seurat.obj.meta.data2))
+
+## sanity check - cells renamed
+# crescent.seurat.obj.cell_renamed@meta.data %>%
+#   rownames_to_column(var="sample_barcode") %>%
+#   dplyr::filter(str_detect(sample_barcode, "IRS_0025_A_025"))
+
+rm(crescent.seurat.obj)
+crescent.seurat.obj.cell_renamed
+
+## rename other metadata columns
+crescent.seurat.obj.cell_renamed.meta.data = crescent.seurat.obj.cell_renamed@meta.data
+crescent.seurat.obj.cell_renamed.meta.data2 =
+  crescent.seurat.obj.cell_renamed.meta.data %>% 
+  mutate(dataset = gsub("_filtered_feature_bc_matrix", "", dataset),
+         EachDatasetGlobalCellClusters = gsub("_filtered_feature_bc_matrix", "", EachDatasetGlobalCellClusters))
+crescent.seurat.obj.cell_renamed@meta.data = crescent.seurat.obj.cell_renamed.meta.data2
+crescent.seurat.obj.cell_renamed %>% dim() # [1] 17955 48374
+
+## sanity check - other columns renamed
+# crescent.seurat.obj.cell_renamed@meta.data$dataset %>% unique()
+# crescent.seurat.obj.cell_renamed@meta.data %>% dplyr::filter(str_detect(dataset, "IRS_0025_A_025"))
+```
+
+# --------------------------------------------
+
+# bio QC
+
+```{r}
+Seurat::DefaultAssay(crescent.seurat.obj.cell_renamed) = "SCT"
+```
+
+## QC metdata
+
+```{r}
+crescent.seurat.obj.cell_renamed = Seurat::PercentageFeatureSet(crescent.seurat.obj.cell_renamed, "^HB[^(P|S)]", col.name = "percent_hb")
+
+feats = c("nFeature_RNA", "nCount_RNA", "mito.fraction", "ribo.fraction", "percent_hb")
+Seurat::VlnPlot(crescent.seurat.obj.cell_renamed, group.by = "dataset", features = feats, pt.size = 0.01, ncol = 3) + Seurat::NoLegend()
+## { mito% is a bit high for some samples, 
+##   HB% is pretty low so no RBC contam }
+
+Seurat::FeatureScatter(crescent.seurat.obj.cell_renamed, "nCount_RNA", "nFeature_RNA", group.by = "dataset", pt.size = 0.1)
+## { corr 0.91, good }
+```
+
+## additional filtering
+
+```{r}
+crescent.seurat.obj.cell_renamed
+
+filter_out_c = Seurat::WhichCells(crescent.seurat.obj.cell_renamed, expression = nFeature_RNA <= 200)
+filter_out_c %>% length() # [1] 40
+selected_c = Seurat::WhichCells(crescent.seurat.obj.cell_renamed, expression = nFeature_RNA > 200)
+
+filter_out_f = rownames(crescent.seurat.obj.cell_renamed)[Matrix::rowSums(crescent.seurat.obj.cell_renamed) <= 3]
+filter_out_f %>% length() # [1] 132
+# filter_out_f %>% sort()
+selected_f = rownames(crescent.seurat.obj.cell_renamed)[Matrix::rowSums(crescent.seurat.obj.cell_renamed) > 3]
+
+crescent.seurat.obj.cell_renamed.filt = subset(crescent.seurat.obj.cell_renamed, features = selected_f, cells = selected_c)
+crescent.seurat.obj.cell_renamed.filt %>% dim()
+# [1] 17823 48334
+
+rm(crescent.seurat.obj.cell_renamed)
+```
+
+## plot QC post-filter
+
+```{r}
+Seurat::VlnPlot(crescent.seurat.obj.cell_renamed.filt, group.by = "dataset", features = feats, pt.size = 0.01, ncol = 3) + Seurat::NoLegend()
+```
+
+## remove genes
+
+```{r}
+# Filter MALAT1
+crescent.seurat.obj.cell_renamed.filt2 = crescent.seurat.obj.cell_renamed.filt[!grepl("MALAT1", rownames(crescent.seurat.obj.cell_renamed.filt)), ]
+rm(crescent.seurat.obj.cell_renamed.filt)
+
+# Filter Mitocondrial
+crescent.seurat.obj.cell_renamed.filt2 = crescent.seurat.obj.cell_renamed.filt2[!grepl("^MT-", rownames(crescent.seurat.obj.cell_renamed.filt2)), ]
+
+# Filter Ribossomal gene (optional if that is a problem on your data)
+crescent.seurat.obj.cell_renamed.filt2 = crescent.seurat.obj.cell_renamed.filt2[!grepl('^RP[SL]', rownames(crescent.seurat.obj.cell_renamed.filt2)), ]
+
+# Filter Hemoglobin gene (optional if that is a problem on your data)
+crescent.seurat.obj.cell_renamed.filt2 = crescent.seurat.obj.cell_renamed.filt2[!grepl("^HB[^(P|S)]", rownames(crescent.seurat.obj.cell_renamed.filt2)), ]
+
+crescent.seurat.obj.cell_renamed.filt2 %>% dim() # [1] 17704 48334
+```
+
+## find doublets
+
+```{r}
+library(DoubletFinder)
+library(parallel)
+
+set.seed(8)
+options(mc.cores = detectCores() - 1)
+
+crescent.seurat.obj.cell_renamed.filt2.split = Seurat::SplitObject(crescent.seurat.obj.cell_renamed.filt2, split.by = "dataset")
+crescent.seurat.obj.cell_renamed.filt2.split[[1]]
+crescent.seurat.obj.cell_renamed.filt2.split %>% names()
+rm(crescent.seurat.obj.cell_renamed.filt2)
+
+## get 10x multiplet rate table
+sc_multiplet_rate.df = readxl::read_xlsx(file.path(dir.ref, "single_cell/single_cell_multiplet_rate_10X.xlsx"), sheet = "Sheet1")
+model.multiplet = lm(multiplet_rate_pct ~ num_cell_recovered, data = sc_multiplet_rate.df)
+model.multiplet %>% summary()
+
+# loop through samples to find doublets
+doubletfinder_res.list = list()
+for (i in 1:length(crescent.seurat.obj.cell_renamed.filt2.split)) {
+  
+  # i = 2
+  
+  sample_name = names(crescent.seurat.obj.cell_renamed.filt2.split)[i]; sample_name
+  print(paste0("Sample ", sample_name))
+  
+  # Pre-process seurat object with standard seurat workflow
+  Seurat::DefaultAssay(crescent.seurat.obj.cell_renamed.filt2.split[[i]]) = "RNA"
+  dataset_ = 
+    crescent.seurat.obj.cell_renamed.filt2.split[[i]] %>% 
+    # Seurat::SCTransform(., variable.features.n = 3000, vars.to.regress = "mito.fraction") %>% 
+    Seurat::NormalizeData(., normalization.method = "LogNormalize") %>%
+    Seurat::FindVariableFeatures(., selection.method = "vst", nfeatures = 3000) %>%
+    Seurat::ScaleData(., vars.to.regress = "mito.fraction") %>%
+    Seurat::RunPCA(., nfeatures.print = 10)
+  # dataset_@assays$SCT
+  
+  # Find significant PCs
+  stdv = dataset_[["pca"]]@stdev
+  sum.stdv = sum(dataset_[["pca"]]@stdev)
+  percent.stdv = (stdv / sum.stdv) * 100
+  cumulative = cumsum(percent.stdv)
+  co1 = which(cumulative > 90 & percent.stdv < 5)[1]
+  co2 = sort(which((percent.stdv[1:length(percent.stdv) - 1] - 
+                       percent.stdv[2:length(percent.stdv)]) > 0.1), 
+              decreasing = T)[1] + 1
+  min.pc = min(co1, co2)
+  min.pc # [1] 20
+  
+  # finish pre-processing
+  dataset_ = 
+    dataset_ %>% 
+    Seurat::RunUMAP(., dims = 1:min.pc) %>% 
+    Seurat::FindNeighbors(., dims = 1:min.pc) %>%             
+    Seurat::FindClusters(., resolution = 0.1)
+
+  # pK identification (no ground-truth)
+  # sweep.list = DoubletFinder::paramSweep_v3(dataset_, PCs = 1:min.pc, num.cores = detectCores() - 1, sct = T)
+  ## pre-processing the data using NormalizeData instead of SCTransfrom. NormalizeData is MUCH less memory intensive
+  sweep.list = DoubletFinder::paramSweep_v3(dataset_, PCs = 1:min.pc, num.cores = detectCores() - 1, sct = F)
+  # sweep.list %>% names() %>% head(3) # [1] "pN_0.05_pK_0.005" "pN_0.05_pK_0.01"  "pN_0.05_pK_0.02" 
+  sweep.stats = DoubletFinder::summarizeSweep(sweep.list)
+  # sweep.stats %>% head(3) %>% print.data.frame()
+  #     pN    pK    BCreal
+  # 1 0.05 0.005 0.8738591
+  # 2 0.05  0.01 0.7842234
+  # 3 0.05  0.02 0.8121942
+  bcmvn = find.pK(sweep.stats)
+  # bcmvn %>% head(3) %>% print.data.frame()
+  #   ParamID    pK    MeanBC        VarBC  BCmetric
+  # 1       1 0.005 0.8298595 0.0013639140  608.4398
+  # 2       2  0.01 0.8392603 0.0008658573  969.2824
+  # 3       3  0.02 0.8504077 0.0005774987 1472.5708
+  
+  # ggplot(bcmvn, aes(pK, BCmetric)) + geom_point()
+  
+  # Optimal pK is the max of the bomodality coefficent (BCmvn) distribution
+  bcmvn.max = bcmvn[which.max(bcmvn$BCmetric),]
+  optimal.pk = bcmvn.max$pK
+  optimal.pk = as.numeric(levels(optimal.pk))[optimal.pk]
+  # optimal.pk # [1] 0.23
+  
+  ## Homotypic doublet proportion estimate
+  annotations = dataset_@meta.data$seurat_clusters
+  homotypic.prop = modelHomotypic(annotations)
+  
+  multiplet_rate = predict(model.multiplet, newdata = data.frame(num_cell_recovered = nrow(dataset_@meta.data))) %>% as.numeric()/100
+  # multiplet_rate
+  
+  nExp.poi = round(multiplet_rate * nrow(dataset_@meta.data))
+  # nExp.poi
+  nExp.poi.adj = round(nExp.poi * (1 - homotypic.prop))
+  # nExp.poi.adj # [1] 702
+  
+  # run DoubletFinder
+  dataset_ = doubletFinder_v3(seu = dataset_, 
+                               PCs = 1:min.pc,        ## statistically significant PCs, estimate from PC elbow
+                               pN = 0.25,             ## proportion of real data to generate artificial doublets
+                               pK = optimal.pk,       ## The PC neighborhood size used to compute pANN. Optimal pK values can be determined using mean-variance-normalized bimodality coefficient.
+                               nExp = nExp.poi.adj)   ## total #of doublets predicted; value can best be estimated from cell loading densities
+  # dataset_@meta.data
+  metadata = 
+    dataset_@meta.data %>% 
+    dplyr::rename_with(.cols = starts_with("DF."), .fn = ~ gsub("DF.*", "doublet_finder", .x)) %>% 
+    dplyr::rename_with(.cols = starts_with("pANN"), .fn = ~ gsub("pANN.*", "DoubletFinder_score", .x)) ## higher the score, more probable it's Doublet
+  dataset_@meta.data = metadata
+  # dataset_@meta.data$doublet_finder %>% table()
+  # Doublet Singlet 
+  #   702    3230 
+  
+  Seurat::DimPlot(dataset_, reduction = "umap", group.by = "doublet_finder") + labs(title = sample_name)
+  
+  # subset and save
+  # dataset_singlets = subset(dataset_, doublet_finder == "Singlet")
+  # dataset_singlets
+  
+  doubletfinder_res.list[[sample_name]] =
+    dataset_@meta.data %>% 
+    dplyr::select(doublet_finder, DoubletFinder_score)
+
+}
+doubletfinder_res.list[[3]]
+
+doubletfinder_res.df = doubletfinder_res.list %>% bind_rows()
+doubletfinder_res.df %>% saveRDS(., file.path(dir.out.data, paste0(PROJ_BATCH, ".doubletfinder_res.df.Rds")))
+
+doubletfinder_res.df %>% 
+  mutate(dataset = rownames(.) %>% gsub(".{17}$", "", .)) %>% 
+  dplyr::select(dataset, doublet_finder) %>% table()
+#                 doublet_finder
+# dataset          Doublet Singlet
+#   IRS_0004_A_003      66    3152
+#   IRS_0014_P_014      15    1519
+#   IRS_002_A_001       92    3840
+#   IRS_0023_P_023     783   10346
+#   IRS_0025_A_025       1     382
+#   IRS_0032_A_032       4     907
+#   IRS_0038_P_038     426    7925
+#   IRS_0055_P_055     362    7461
+#   IRS_0056_P_056       6     956
+#   IRS_008_P_008        1     235
+#   IRS_015_A_015      614    9241
+```
+
+## readRDS()
+
+```{r}
+doubletfinder_res.df = readRDS(file.path(dir.out.data, paste0(PROJ_BATCH, ".doubletfinder_res.df.Rds")))
+doubletfinder_res.df %>% dplyr::filter(doublet_finder == "Singlet")
+```
+
+## remove doublets
+
+```{r}
+crescent.seurat.obj.cell_renamed.filt2.singlets = 
+  subset(x = crescent.seurat.obj.cell_renamed.filt2, cells = doubletfinder_res.df %>% dplyr::filter(doublet_finder == "Singlet") %>% rownames())
+crescent.seurat.obj.cell_renamed.filt2.singlets
+```
+
+## saveRDS()
+
+```{r}
+# crescent.seurat.obj.cell_renamed.filt2.singlets %>% saveRDS(., file.path(dir.out.data, paste0(PROJ_BATCH, ".crescent.seurat.obj.cell_renamed.filt2.singlets.Rds")))
+crescent.seurat.obj.cell_renamed.filt2.singlets = readRDS(file.path(dir.out.data, paste0(PROJ_BATCH, ".crescent.seurat.obj.cell_renamed.filt2.singlets.Rds")))
+```
+
+# --------------------------------------------
+
+# singleR 
+
+## ENCODE reference
+
+```{r}
+ref.ENCODE = celldex::BlueprintEncodeData()
+ENCODE_HN_cells.vec = c("Adipocytes", "B-cells", "CD4+ T-cells", "CD8+ T-cells", "DC", "Endothelial cells", "Eosinophils", "Epithelial cells", "Fibroblasts", "Macrophages", "Monocytes", "Neutrophils", "NK cells", "Skeletal muscle", "Smooth muscle")
+ref.ENCODE.HN = ref.ENCODE[,ref.ENCODE$label.main %in% ENCODE_HN_cells.vec]
+ref.ENCODE.HN %>% saveRDS(., file.path("/Users/minghan/bioinfoproj/references/single_cell/celldex/encode.hn.se.Rds"))
+```
+
+### run on H4H
+
+- /cluster/projects/cgptip/projects/IRIS/projects/scmulti/analysis/analysis001_singleR/scripts
+
+### load H4H results
+
+```{r}
+singleR.encode.res = readRDS(file.path(dir.out.data, "IRIS_batch123.singleR.encode_hn_mainLabel.Rds"))
+singleR.encode.res.df = data.frame(cell_id = singleR.encode.res@rownames, 
+                                   first.labels = singleR.encode.res$first.labels, 
+                                   labels = singleR.encode.res$labels, 
+                                   pruned.labels = singleR.encode.res$pruned.labels)
+singleR.encode.res.df
+```
+
+```{r}
+singleR.encode.res.df %>% mutate(sample_id = gsub('.{17}$', '', cell_id)) %>% dplyr::pull(sample_id) %>% table() %>% as.data.frame() %>% arrange(".") %>% print.data.frame()
+#                 .  Freq
+# 1  IRS_0004_A_003  3152
+# 2  IRS_0014_P_014  1519
+# 3   IRS_002_A_001  3840
+# 4  IRS_0023_P_023 10346
+# 5  IRS_0025_A_025   382
+# 6  IRS_0032_A_032   907
+# 7  IRS_0038_P_038  7925
+# 8  IRS_0055_P_055  7461
+# 9  IRS_0056_P_056   956
+# 10  IRS_008_P_008   235
+# 11  IRS_015_A_015  9241
+
+singleR.encode.res.df$labels %>% table() %>% sum() # [1] 45964
+singleR.encode.res.df$labels %>% table() %>% as.data.frame() %>% dplyr::rename("cell_type"=".") %>% arrange(desc(Freq)) %>% print.data.frame()
+#            cell_type  Freq
+# 1       CD8+ T-cells 13441
+# 2        Fibroblasts 10167
+# 3          Monocytes  6274
+# 4        Macrophages  3439
+# 5       CD4+ T-cells  3123
+# 6  Endothelial cells  2474
+# 7   Epithelial cells  1846
+# 8                 DC  1676
+# 9           NK cells  1534
+# 10        Adipocytes   882
+# 11           B-cells   748
+# 12       Neutrophils   162
+# 13     Smooth muscle   124
+# 14       Eosinophils    73
+# 15   Skeletal muscle     1
+```
+
+### plotScoreHeatmap()
+
+```{r}
+png(file.path(dir.out.figure.qc, "IRIS_batch123.singleR.encode_hn_mainLabel.plotScoreHeatmap.png"), 
+    width = 8, height = 4, units = "in", bg = "white", res = 300)
+SingleR::plotScoreHeatmap(singleR.encode.res)
+dev.off()
+```
+
+### merge into seurat obj
+
+```{r}
+crescent.seurat.obj.singleR.encode = crescent.seurat.obj.cell_renamed.filt2.singlets
+crescent.seurat.obj.singleR.encode.meta.data = crescent.seurat.obj.singleR.encode@meta.data
+crescent.seurat.obj.singleR.encode@meta.data = 
+  crescent.seurat.obj.singleR.encode.meta.data %>% 
+  rownames_to_column(var="cell_barcode") %>% 
+  left_join(., singleR.encode.res.df %>% dplyr::select(cell_id, labels), by=c("cell_barcode"="cell_id")) %>% 
+  dplyr::rename("singleR.labels"="labels") %>% 
+  column_to_rownames(var="cell_barcode")
+```
+
+### DimPlot()
+
+```{r}
+Seurat::DimPlot(crescent.seurat.obj.singleR.encode, 
+                group.by = "singleR.labels", split.by = "dataset", ncol = 4, reduction = "umap") + 
+  scale_color_manual(values = colours_n40[3:20])
+ggsave(file.path(dir.out.figure.analysis, "IRIS.annotation_singleR.encode_ref.batch123_n11.png"), device = "png", width = 12, height = 6, units = "in", dpi = 300, bg = "white")
+```
+
+### add scVDJ metadata
+
+```{r}
+scTCR.scBCR.metadata = readRDS(file.path(dir.out.data, paste0(PROJ_BATCH, ".scTCR.scBCR.metadata.Rds")))
+setdiff(scTCR.scBCR.metadata$sample2_Barcode, crescent.seurat.obj.singleR.encode@meta.data %>% rownames) %>% length() # [1] 2234
+
+crescent.seurat.obj.singleR.encode.meta.data.scVDJmetadata = 
+  full_join(
+    crescent.seurat.obj.singleR.encode@meta.data %>% rownames_to_column(var="sample_barcode"),
+    scTCR.scBCR.metadata,
+    by = c("sample_barcode"="sample2_Barcode")
+  )
+crescent.seurat.obj.singleR.encode.meta.data.scVDJmetadata
+```
+
+#### inspect metadata
+
+```{r}
+crescent.seurat.obj.singleR.encode.meta.data.scVDJmetadata %>% 
+  mutate(Tcell_Bcell = paste0(Tcell, "_", Bcell)) %>% 
+  dplyr::select(singleR.labels, Tcell_Bcell) %>% 
+  table(useNA = "ifany")
+#                    Tcell_Bcell
+# singleR.labels      NA_NA noTCR_yesBCR yesTCR_noBCR yesTCR_yesBCR
+#   Adipocytes          719           92           69             2
+#   B-cells             218          493            4            33
+#   CD4+ T-cells        891            2         2223             7
+#   CD8+ T-cells       2546           25        10842            28
+#   DC                 1511            9          154             2
+#   Endothelial cells  2397            3           72             2
+#   Eosinophils          73            0            0             0
+#   Epithelial cells   1785            5           56             0
+#   Fibroblasts        9568          138          445            16
+#   Macrophages        2939          136          340            24
+#   Monocytes          5582          108          563            21
+#   Neutrophils         161            0            1             0
+#   NK cells           1355           15          164             0
+#   Skeletal muscle       1            0            0             0
+#   Smooth muscle       124            0            0             0
+#   <NA>                  0          366         1853            15
+```
+
+### revise singleR.label
+
+```{r}
+crescent.seurat.obj.singleR.encode.meta.data.scVDJmetadata.revised =
+  crescent.seurat.obj.singleR.encode.meta.data.scVDJmetadata %>% 
+  mutate(Tcell_Bcell = paste0(Tcell, "_", Bcell)) %>% 
+  mutate(singleR.labels.revised = 
+           case_when(
+             Tcell_Bcell == "yesTCR_noBCR" & singleR.labels == "Adipocytes"        ~ "Adipocytes_TCR", 
+             Tcell_Bcell == "yesTCR_noBCR" & singleR.labels == "B-cells"           ~ "B-cells_TCR", 
+             Tcell_Bcell == "yesTCR_noBCR" & singleR.labels == "CD4+ T-cells"      ~ "CD4+ T-cells", 
+             Tcell_Bcell == "yesTCR_noBCR" & singleR.labels == "CD8+ T-cells"      ~ "CD8+ T-cells", 
+             Tcell_Bcell == "yesTCR_noBCR" & singleR.labels == "DC"                ~ "DC_TCR", 
+             Tcell_Bcell == "yesTCR_noBCR" & singleR.labels == "Endothelial cells" ~ "Endothelial cells_TCR", 
+             Tcell_Bcell == "yesTCR_noBCR" & singleR.labels == "Eosinophils"       ~ "Eosinophils_TCR", 
+             Tcell_Bcell == "yesTCR_noBCR" & singleR.labels == "Epithelial cells"  ~ "Epithelial cells_TCR", 
+             Tcell_Bcell == "yesTCR_noBCR" & singleR.labels == "Fibroblasts"       ~ "Fibroblasts_TCR", 
+             Tcell_Bcell == "yesTCR_noBCR" & singleR.labels == "Macrophages"       ~ "Macrophages_TCR", 
+             Tcell_Bcell == "yesTCR_noBCR" & singleR.labels == "Monocytes"         ~ "Monocytes_TCR", 
+             Tcell_Bcell == "yesTCR_noBCR" & singleR.labels == "Neutrophils"       ~ "Neutrophils_TCR", 
+             Tcell_Bcell == "yesTCR_noBCR" & singleR.labels == "NK cells"          ~ "NK cells_TCR", 
+             Tcell_Bcell == "yesTCR_noBCR" & singleR.labels == "Skeletal muscle"   ~ "Skeletal muscle_TCR", 
+             Tcell_Bcell == "yesTCR_noBCR" & singleR.labels == "Smooth muscle"     ~ "Smooth muscle_TCR", 
+             
+             ## noTCR_yesBCR
+             Tcell_Bcell == "noTCR_yesBCR" &  str_detect(singleR.labels, "B-cells") ~ singleR.labels,
+             Tcell_Bcell == "noTCR_yesBCR" & !str_detect(singleR.labels, "B-cells") ~ "B-cells",
+             
+             ## yesTCR_yesBCR
+             Tcell_Bcell == "yesTCR_yesBCR" & !is.na(singleR.labels) ~ "TCR_BCR_DualExpressor",
+             
+             ## noTCR_noBCR
+             Tcell_Bcell == "NA_NA" & singleR.labels == "CD4+ T-cells" ~ "CD4+ T-cells_noTCR",
+             Tcell_Bcell == "NA_NA" & singleR.labels == "CD8+ T-cells" ~ "CD8+ T-cells_noTCR",
+             Tcell_Bcell == "NA_NA" & str_detect(singleR.labels, "B-cells") ~ "B-cells_noBCR",
+             Tcell_Bcell == "NA_NA" & !str_detect(singleR.labels, "T-cells") & !str_detect(singleR.labels, "B-cells") ~ singleR.labels,
+             
+             TRUE ~ "ERROR")) %>% 
+  dplyr::select(sample_barcode, orig.ident, dataset, singleR.labels, singleR.labels.revised, Tcell_Bcell, everything())
+crescent.seurat.obj.singleR.encode.meta.data.scVDJmetadata.revised$singleR.labels.revised %>% unique() %>% sort() %>% cat(., sep = "\n")
+crescent.seurat.obj.singleR.encode.meta.data.scVDJmetadata.revised %>% 
+  dplyr::filter(singleR.labels.revised == "ERROR") %>% nrow() # [1] 2234
+
+crescent.seurat.obj.singleR.encode@meta.data = 
+  crescent.seurat.obj.singleR.encode.meta.data.scVDJmetadata.revised %>% 
+  dplyr::filter(!is.na(dataset)) %>% 
+  column_to_rownames(var = "sample_barcode")
+crescent.seurat.obj.singleR.encode@meta.data
+```
+
+### saveRDS()
+
+```{r}
+crescent.seurat.obj.singleR.encode %>% saveRDS(., file.path(dir.out.data, paste0(PROJ_BATCH, ".crescent.seurat.obj.singleR.encode.Rds")))
+```
+
+<br>
+
+# EOF

@@ -1,0 +1,173 @@
+---
+title: "2023_08_01_1105-IRIS_batch123_scTCR_BCR_repLoad"
+author: "Ming"
+date: "`r format(Sys.time(), '%Y_%m_%d_%H_%M')`"
+---
+
+```{r setup, include=FALSE}
+# knitr::opts_chunk$set(eval = FALSE)      ## no run
+# knitr::opts_chunk$set(include = FALSE)   ## yes run, no code, no output
+knitr::opts_chunk$set(echo = TRUE)         ## yes run, no code, yes output ( for figures )
+knitr::opts_chunk$set(results = 'hide')    ## yes run, yes code, no output
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(warning = FALSE)
+suppressPackageStartupMessages(library(tidyverse))
+suppressPackageStartupMessages(library(ggplot2))
+'%ni%' = Negate('%in%')
+# options(scipen = 999)       # decimals
+# options(scipen = 0)         # sci notation
+# options(max.print=999999)
+
+dir.data                = "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/data"
+dir.out.data            = "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/out_data"
+dir.data.scTCR          = "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/out_for_immunarch_scTCR"
+dir.data.scBCR          = "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/out_for_immunarch_scBCR"
+
+PROJ = "IRIS"
+```
+
+# read in data
+
+## scTCR
+
+### symlink
+
+```{r}
+## 10 scTCR
+list.files(dir.data, full.names = T, pattern = "filtered_contig_annotations.csv", recursive = T) %>% str_subset("_TCR") %>% cat(., sep = "\n")
+## [1] 12
+
+## respect GEX sample naming
+# crescent.seurat.obj.cell_renamed.azimuth.pbmcref@meta.data$dataset %>% unique() %>% sort() %>% cat(., sep=", ")
+# IRS_0004_A_003, IRS_0014_P_014, IRS_002_A_001, IRS_0023_P_023, IRS_0025_A_025, IRS_0032_A_032, IRS_0038_P_038, IRS_0055_P_055, IRS_0056_P_056, IRS_008_P_008, IRS_015_A_015
+```
+
+```{bash}
+## skip IRS-0070
+## ln -s "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/data/IRS-0070-P-070_TCR/filtered_contig_annotations.csv" "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/out_for_immunarch_scTCR/IRS-0070-P-070_TCR_filtered_contig_annotations.csv"
+
+## uncomment to run bash
+# ln -s "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/data/IRS-0004-A-003_TCR/filtered_contig_annotations.csv" "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/out_for_immunarch_scTCR/IRS-0004-A-003_TCR_filtered_contig_annotations.csv"
+# ln -s "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/data/IRS-0014-P-014_TCR/filtered_contig_annotations.csv" "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/out_for_immunarch_scTCR/IRS-0014-P-014_TCR_filtered_contig_annotations.csv"
+# ln -s "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/data/IRS-0023-P-023_TCR/filtered_contig_annotations.csv" "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/out_for_immunarch_scTCR/IRS-0023-P-023_TCR_filtered_contig_annotations.csv"
+# ln -s "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/data/IRS-0025-A-025_TCR/filtered_contig_annotations.csv" "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/out_for_immunarch_scTCR/IRS-0025-A-025_TCR_filtered_contig_annotations.csv"
+# ln -s "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/data/IRS-0032-A-032_TCR/filtered_contig_annotations.csv" "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/out_for_immunarch_scTCR/IRS-0032-A-032_TCR_filtered_contig_annotations.csv"
+# ln -s "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/data/IRS-0055-P-055_TCR/filtered_contig_annotations.csv" "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/out_for_immunarch_scTCR/IRS-0055-P-055_TCR_filtered_contig_annotations.csv"
+# ln -s "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/data/IRS-0056-P-056_TCR/filtered_contig_annotations.csv" "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/out_for_immunarch_scTCR/IRS-0056-P-056_TCR_filtered_contig_annotations.csv"
+# ln -s "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/data/IRS-008-P-008_TCR/filtered_contig_annotations.csv"  "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/out_for_immunarch_scTCR/IRS-008-P-008_TCR_filtered_contig_annotations.csv"
+# ln -s "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/data/IRS-015-A-015_TCR/filtered_contig_annotations.csv"  "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/out_for_immunarch_scTCR/IRS-015-A-015_TCR_filtered_contig_annotations.csv"
+# ln -s "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/data/IRS-002-A-001_TCR/filtered_contig_annotations.csv"  "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/out_for_immunarch_scTCR/IRS-002-A-001_TCR_filtered_contig_annotations.csv"
+# ln -s "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/data/IRS-0038-P-038_TCR/filtered_contig_annotations.csv" "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/out_for_immunarch_scTCR/IRS-0038-P-038_TCR_filtered_contig_annotations.csv"
+```
+
+### immunarch::repLoad()
+
+```{r}
+# ?immunarch::repLoad
+## { seems to also exclude any cells that express 2 different TRA-B combos? }
+scTCR.im.single = immunarch::repLoad(file.path(dir.data.scTCR), .mode = "single", .coding = T)
+
+## recalc proportions
+scTCR.im.prop_recalcd.list = list()
+for ( i in scTCR.im.single$data %>% names() ) {
+  
+  # i = scTCR.im.single$data %>% names() %>% .[1]; i
+  clone_total = scTCR.im.single$data[[i]]$Clones %>% sum(); clone_total
+  df =
+    scTCR.im.single$data[[i]] %>% 
+    mutate(Proportion = Clones/clone_total)
+  scTCR.im.prop_recalcd.list[[i]] = df
+  
+}
+## sanity check
+scTCR.im.prop_recalcd.list[[1]]$Proportion %>% sum() # [1] 1
+
+## TRA
+scTCR.im.prop_recalcd.TRA.list = scTCR.im.prop_recalcd.list[str_subset(names(scTCR.im.prop_recalcd.list), "TRA")]
+
+## TRB
+scTCR.im.prop_recalcd.TRB.list = scTCR.im.prop_recalcd.list[str_subset(names(scTCR.im.prop_recalcd.list), "TRB")]
+```
+
+### saveRDS()
+
+```{r}
+scTCR.im.prop_recalcd.TRA.list %>% saveRDS(., file.path(dir.out.data, "scTCR.im.prop_recalcd.TRA.list.Rds"))
+scTCR.im.prop_recalcd.TRB.list %>% saveRDS(., file.path(dir.out.data, "scTCR.im.prop_recalcd.TRB.list.Rds"))
+```
+
+## -------------------------------------------
+
+## scBCR
+
+### symlink
+
+```{r}
+## 10 scBCRs
+list.files(dir.data, full.names = T, pattern = "filtered_contig_annotations.csv", recursive = T) %>% str_subset("_BCR") %>% cat(., sep = "\n")
+## [1] 10
+
+## respect GEX sample naming
+# crescent.seurat.obj.cell_renamed.azimuth.pbmcref@meta.data$dataset %>% unique() %>% sort() %>% cat(., sep=", ")
+# IRS_0004_A_003, IRS_0014_P_014, IRS_002_A_001, IRS_0023_P_023, IRS_0025_A_025, IRS_0032_A_032, 
+# IRS_0038_P_038, IRS_0055_P_055, IRS_0056_P_056, IRS_008_P_008, IRS_015_A_015
+```
+
+```{bash}
+## uncomment to run bash
+# ln -s "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/data/IRS-0004-A-003_BCR/filtered_contig_annotations.csv" "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/out_for_immunarch_scBCR/IRS-0004-A-003_BCR_filtered_contig_annotations.csv"
+# ln -s "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/data/IRS-0014-P-014_BCR/filtered_contig_annotations.csv" "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/out_for_immunarch_scBCR/IRS-0014-P-014_BCR_filtered_contig_annotations.csv"
+# ln -s "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/data/IRS-002-A-001_BCR/filtered_contig_annotations.csv"  "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/out_for_immunarch_scBCR/IRS-002-A-001_BCR_filtered_contig_annotations.csv"
+# ln -s "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/data/IRS-0023-P-023_BCR/filtered_contig_annotations.csv" "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/out_for_immunarch_scBCR/IRS-0023-P-023_BCR_filtered_contig_annotations.csv"
+# ln -s "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/data/IRS-0025-A-025_BCR/filtered_contig_annotations.csv" "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/out_for_immunarch_scBCR/IRS-0025-A-025_BCR_filtered_contig_annotations.csv"
+# ln -s "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/data/IRS-0032-A-032_BCR/filtered_contig_annotations.csv" "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/out_for_immunarch_scBCR/IRS-0032-A-032_BCR_filtered_contig_annotations.csv"
+# ln -s "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/data/IRS-0038-P-038_BCR/filtered_contig_annotations.csv" "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/out_for_immunarch_scBCR/IRS-0038-P-038_BCR_filtered_contig_annotations.csv"
+# ln -s "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/data/IRS-0055-P-055_BCR/filtered_contig_annotations.csv" "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/out_for_immunarch_scBCR/IRS-0055-P-055_BCR_filtered_contig_annotations.csv"
+# ln -s "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/data/IRS-0056-P-056_BCR/filtered_contig_annotations.csv" "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/out_for_immunarch_scBCR/IRS-0056-P-056_BCR_filtered_contig_annotations.csv"
+# ln -s "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/data/IRS-015-A-015_BCR/filtered_contig_annotations.csv"  "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/out_for_immunarch_scBCR/IRS-015-A-015_BCR_filtered_contig_annotations.csv"
+```
+
+### immunarch::repLoad()
+
+```{r}
+scBCR.im.single = immunarch::repLoad(file.path(dir.data.scBCR), .mode = "single", .coding = T)
+
+## recalc proportions
+scBCR.im.prop_recalcd.list = list()
+for ( i in scBCR.im.single$data %>% names() ) {
+  
+  # i = scBCR.im.single$data %>% names() %>% .[1]; i
+  clone_total = scBCR.im.single$data[[i]]$Clones %>% sum(); clone_total
+  df =
+    scBCR.im.single$data[[i]] %>% # dplyr::pull(Proportion) %>% sum()
+    mutate(Proportion = Clones/clone_total)
+  scBCR.im.prop_recalcd.list[[i]] = df
+  
+}
+## sanity check
+scBCR.im.prop_recalcd.list[[10]]$Proportion %>% sum() # [1] 1
+
+## save chains ###
+scBCR.im.single$meta$Chain %>% unique() # [1] "IGH" "IGK" "IGL"
+
+## IGH
+scBCR.im.prop_recalcd.IGH.list = scBCR.im.prop_recalcd.list[str_subset(names(scBCR.im.prop_recalcd.list), "IGH")]
+
+## IGK
+scBCR.im.prop_recalcd.IGK.list = scBCR.im.prop_recalcd.list[str_subset(names(scBCR.im.prop_recalcd.list), "IGK")]
+
+## IGL
+scBCR.im.prop_recalcd.IGL.list = scBCR.im.prop_recalcd.list[str_subset(names(scBCR.im.prop_recalcd.list), "IGL")]
+```
+
+### saveRDS()
+
+```{r}
+scBCR.im.prop_recalcd.IGH.list %>% saveRDS(., file.path(dir.out.data, "scBCR.im.prop_recalcd.IGH.list.Rds"))
+scBCR.im.prop_recalcd.IGK.list %>% saveRDS(., file.path(dir.out.data, "scBCR.im.prop_recalcd.IGK.list.Rds"))
+scBCR.im.prop_recalcd.IGL.list %>% saveRDS(., file.path(dir.out.data, "scBCR.im.prop_recalcd.IGL.list.Rds"))
+```
+
+<br>
+
+# EOF

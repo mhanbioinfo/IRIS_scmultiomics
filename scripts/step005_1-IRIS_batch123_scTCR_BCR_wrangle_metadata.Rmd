@@ -1,0 +1,447 @@
+---
+title: "2023_08_01_1159-IRIS_batch123_scTCR_BCR_wrangle_metadata"
+author: "Ming"
+date: "`r format(Sys.time(), '%Y_%m_%d_%H_%M')`"
+---
+
+```{r setup, include=FALSE}
+# knitr::opts_chunk$set(eval = FALSE)      ## no run
+# knitr::opts_chunk$set(include = FALSE)   ## yes run, no code, no output
+knitr::opts_chunk$set(echo = TRUE)         ## yes run, no code, yes output ( for figures )
+knitr::opts_chunk$set(results = 'hide')    ## yes run, yes code, no output
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(warning = FALSE)
+suppressPackageStartupMessages(library(tidyverse))
+suppressPackageStartupMessages(library(ggplot2))
+'%ni%' = Negate('%in%')
+options(scipen = 999)       # decimals
+# options(scipen = 0)         # sci notation
+# options(max.print=999999)
+
+dir.data                = "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/data"
+dir.out.data            = "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/out_data"
+dir.out.figure.analysis = "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/out_figures_analysis"
+dir.out.figure.qc       = "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/out_figures_qc"
+
+dir.data.scTCR          = "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/out_for_immunarch_scTCR"
+dir.data.scBCR          = "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/out_for_immunarch_scBCR"
+
+PROJ_BATCH = "IRIS_batch123"
+
+colours_n30 = 
+  c("dodgerblue2", "#E31A1C", "green4", "#6A3D9A", "#FF7F00", 
+    "gold1", "gray70", "#C1645C", "skyblue2", "#FB9A99", "palegreen2", 
+    "#CAB2D6", "#FDBF6F", "#D46A43", "khaki2", "maroon", 
+    "orchid1", "deeppink1", "blue1", "steelblue4", "darkturquoise", 
+    "green1", "yellow4", "yellow3", "darkorange4", "brown",
+    "#5C9A5C", "#CC8BAD", "#B8782A", "#546C9D", "#459E6F")
+
+expanded_cutoff = 1
+cloneTypes = c(Rare = 1e-04, Small = 0.001, Medium = 0.01, Large = 0.1, Hyperexpanded = 1)
+# cloneTypes
+```
+
+# read in data
+
+## scTCR
+
+```{r}
+scTCR.im.prop_recalcd.TRA.list = readRDS(file.path(dir.out.data, "scTCR.im.prop_recalcd.TRA.list.Rds"))
+scTCR.im.prop_recalcd.TRB.list = readRDS(file.path(dir.out.data, "scTCR.im.prop_recalcd.TRB.list.Rds"))
+```
+
+## scBCR
+
+```{r}
+scBCR.im.prop_recalcd.IGH.list = readRDS(file.path(dir.out.data, "scBCR.im.prop_recalcd.IGH.list.Rds"))
+scBCR.im.prop_recalcd.IGK.list = readRDS(file.path(dir.out.data, "scBCR.im.prop_recalcd.IGK.list.Rds"))
+scBCR.im.prop_recalcd.IGL.list = readRDS(file.path(dir.out.data, "scBCR.im.prop_recalcd.IGL.list.Rds"))
+```
+
+# --------------------------------------------
+
+# get scTCR barcodes
+
+## wrangle TRA
+
+```{r}
+scTCR.im.prop_recalcd.TRA.cell_barcode.df =
+  scTCR.im.prop_recalcd.TRA.list %>% 
+  bind_rows(., .id = "sample") %>% 
+  dplyr::select(sample, Barcode, CDR3.aa, V.name, J.name, Clones, Proportion) %>%
+  tidyr::separate_longer_delim(c(Barcode), delim = ";") %>% 
+  mutate(sample2 = sample %>% gsub("_filtered_contig_annotations_TRA", "", .),
+         Proportion = Proportion %>% round(5)) %>% 
+  dplyr::rename("sample_TRA"="sample",
+                "CDR3.aa_TRA"="CDR3.aa",
+                "V.name_TRA"="V.name",
+                "J.name_TRA"="J.name",
+                "Clones_TRA"="Clones",
+                "Proportion_TRA"="Proportion") %>% 
+  unite(col = "sample2_Barcode", sample2, Barcode, sep = "__", remove = T) %>% 
+  mutate(TRA_expanded = if_else(Clones_TRA > expanded_cutoff, "expanded", "not_expanded"),
+         TRA_cloneSize = case_when(Proportion_TRA >= 0.9    & Proportion_TRA < 1     ~ "Hyperexpanded",
+                                   Proportion_TRA >= 0.1    & Proportion_TRA < 0.9   ~ "Large",
+                                   Proportion_TRA >= 0.01   & Proportion_TRA < 0.1   ~ "Medium",
+                                   Proportion_TRA >= 0.001  & Proportion_TRA < 0.01  ~ "Small",
+                                   Proportion_TRA >= 0.0001 & Proportion_TRA < 0.001 ~ "Rare",
+                                   TRUE ~ "ERROR")) %>% 
+  arrange(sample2_Barcode)
+scTCR.im.prop_recalcd.TRA.cell_barcode.df %>% dim() # [1] 16355     9
+# scTCR.im.prop_recalcd.TRA.cell_barcode.df
+```
+
+## wrangle TRB
+
+```{r}
+scTCR.im.prop_recalcd.TRB.cell_barcode.df =
+  scTCR.im.prop_recalcd.TRB.list %>% 
+  bind_rows(., .id = "sample") %>% 
+  dplyr::select(sample, Barcode, CDR3.aa, V.name, J.name, Clones, Proportion) %>%
+  tidyr::separate_longer_delim(c(Barcode), delim = ";") %>% 
+  mutate(sample2 = sample %>% gsub("_filtered_contig_annotations_TRB", "", .),
+         Proportion = Proportion %>% round(5)) %>% 
+  dplyr::rename("sample_TRB"="sample",
+                "CDR3.aa_TRB"="CDR3.aa",
+                "V.name_TRB"="V.name",
+                "J.name_TRB"="J.name",
+                "Clones_TRB"="Clones",
+                "Proportion_TRB"="Proportion") %>% 
+  unite(col = "sample2_Barcode", sample2, Barcode, sep = "__", remove = T) %>% 
+  mutate(TRB_expanded = if_else(Clones_TRB > expanded_cutoff, "expanded", "not_expanded"),
+         TRB_cloneSize = case_when(Proportion_TRB >= 0.9    & Proportion_TRB < 1     ~ "Hyperexpanded",
+                                   Proportion_TRB >= 0.1    & Proportion_TRB < 0.9   ~ "Large",
+                                   Proportion_TRB >= 0.01   & Proportion_TRB < 0.1   ~ "Medium",
+                                   Proportion_TRB >= 0.001  & Proportion_TRB < 0.01  ~ "Small",
+                                   Proportion_TRB >= 0.0001 & Proportion_TRB < 0.001 ~ "Rare",
+                                   TRUE ~ "ERROR")) %>% 
+  arrange(sample2_Barcode)
+scTCR.im.prop_recalcd.TRB.cell_barcode.df %>% dim() # [1] 16986     9
+# scTCR.im.prop_recalcd.TRB.cell_barcode.df %>% names() %>% cat(., sep = ", ")
+```
+
+## full_join() TRA and TRB
+
+```{r}
+scTCR.im.prop_recalcd.TRAandB.cell_barcode.df = 
+  full_join(scTCR.im.prop_recalcd.TRA.cell_barcode.df, 
+            scTCR.im.prop_recalcd.TRB.cell_barcode.df,
+            by=c("sample2_Barcode"="sample2_Barcode")) %>% 
+  dplyr::select(sample2_Barcode, 
+                CDR3.aa_TRA, V.name_TRA, J.name_TRA, Clones_TRA, Proportion_TRA, TRA_expanded, TRA_cloneSize, 
+                CDR3.aa_TRB, V.name_TRB, J.name_TRB, Clones_TRB, Proportion_TRB, TRB_expanded, TRB_cloneSize)
+scTCR.im.prop_recalcd.TRAandB.cell_barcode.df %>% dim() # [1] 19134     15
+# scTCR.im.prop_recalcd.TRAandB.cell_barcode.df
+```
+
+## collapse {TRA;TRB}
+
+```{r}
+scTCR.im.prop_recalcd.TRAandB.cell_barcode.collapsed = 
+  scTCR.im.prop_recalcd.TRAandB.cell_barcode.df %>% 
+  group_by(sample2_Barcode) %>%
+  summarize(CDR3.aa_TRA    = paste(CDR3.aa_TRA,    collapse = ";"), 
+            V.name_TRA     = paste(V.name_TRA,     collapse = ";"), 
+            J.name_TRA     = paste(J.name_TRA,     collapse = ";"), 
+            Clones_TRA     = paste(Clones_TRA,     collapse = ";"), 
+            Proportion_TRA = paste(Proportion_TRA, collapse = ";"), 
+            TRA_expanded   = paste(TRA_expanded,   collapse = ";"), 
+            TRA_cloneSize  = paste(TRA_cloneSize,  collapse = ";"), 
+            
+            CDR3.aa_TRB    = paste(CDR3.aa_TRB,    collapse = ";"), 
+            V.name_TRB     = paste(V.name_TRB,     collapse = ";"), 
+            J.name_TRB     = paste(J.name_TRB,     collapse = ";"), 
+            Clones_TRB     = paste(Clones_TRB,     collapse = ";"), 
+            Proportion_TRB = paste(Proportion_TRB, collapse = ";"), 
+            TRB_expanded   = paste(TRB_expanded,   collapse = ";"), 
+            TRB_cloneSize  = paste(TRB_cloneSize,  collapse = ";")) %>% 
+  mutate(across(everything(), .fns = ~ gsub("^NA;.*NA$", "NA", .x)))
+scTCR.im.prop_recalcd.TRAandB.cell_barcode.collapsed %>% dim() # [1] 16936    15
+# scTCR.im.prop_recalcd.TRAandB.cell_barcode.collapsed
+```
+
+## sanity checks
+
+```{r}
+## cells expressing max 1 TCR
+scTCR.im.prop_recalcd.TRAandB.cell_barcode.collapsed %>% dplyr::filter(!str_detect(CDR3.aa_TRA, ";")) %>% nrow() # [1] 15032
+scTCR.im.prop_recalcd.TRAandB.cell_barcode.collapsed %>% dplyr::filter(!str_detect(CDR3.aa_TRB, ";")) %>% nrow() # [1] 15032
+
+## cells express both TRA and TRB
+scTCR.im.prop_recalcd.TRAandB.cell_barcode.collapsed %>% dplyr::filter(str_detect(CDR3.aa_TRB, "^NA$")) # [1] 379 <-- no TRB
+scTCR.im.prop_recalcd.TRAandB.cell_barcode.collapsed %>% dplyr::filter(str_detect(CDR3.aa_TRA, "^NA$")) # [1] 2203 <-- no TRA
+scTCR.im.prop_recalcd.TRAandB.cell_barcode.collapsed %>% dplyr::filter(!str_detect(CDR3.aa_TRA, "^NA$") & !str_detect(CDR3.aa_TRB, "^NA$")) # [1] 14354 <-- both TRA and TRB
+```
+
+## get scTCR.metadata
+
+```{r}
+scTCR.metadata = 
+  scTCR.im.prop_recalcd.TRAandB.cell_barcode.collapsed %>% 
+  mutate(Tcell = "yesTCR",
+         TRA_num = case_when(!str_detect(CDR3.aa_TRA, ";") ~ "TRA_single",
+                              str_detect(CDR3.aa_TRA, ";") ~ "TRA_multiple"), 
+         TRB_num = case_when(!str_detect(CDR3.aa_TRB, ";") ~ "TRB_single",
+                              str_detect(CDR3.aa_TRB, ";") ~ "TRB_multiple"),
+         TR_A_B = case_when(str_detect(CDR3.aa_TRB, "^NA$") ~ "TRA_only",
+                            str_detect(CDR3.aa_TRA, "^NA$") ~ "TRB_only",
+                            TRUE ~ "TRA_and_TRB"))
+scTCR.metadata %>% dim() # [1] 16936    19
+```
+
+## saveRDS()
+
+```{r}
+# scTCR.metadata %>% saveRDS(., file.path(dir.out.data, "scTCR.metadata.Rds"))
+```
+
+## inspect metadata
+
+```{r}
+scTCR.metadata$TRA_expanded  %>% table() %>% as.data.frame()
+scTCR.metadata$TRA_cloneSize %>% table() %>% as.data.frame()
+scTCR.metadata$TRA_num       %>% table() %>% as.data.frame()
+
+scTCR.metadata$TRB_expanded  %>% table() %>% as.data.frame()
+scTCR.metadata$TRB_cloneSize %>% table() %>% as.data.frame()
+scTCR.metadata$TRB_num       %>% table() %>% as.data.frame()
+
+scTCR.metadata$TR_A_B        %>% table() %>% as.data.frame()
+```
+
+# --------------------------------------------
+
+# get scBCR barcodes
+
+## wrangle IGH
+
+```{r}
+scTCR.im.prop_recalcd.IGH.cell_barcode.df =
+  scBCR.im.prop_recalcd.IGH.list %>% 
+  bind_rows(., .id = "sample") %>% 
+  dplyr::select(sample, Barcode, CDR3.aa, V.name, J.name, Clones, Proportion) %>%
+  tidyr::separate_longer_delim(c(Barcode), delim = ";") %>% 
+  mutate(sample2 = sample %>% gsub("_filtered_contig_annotations_IGH", "", .),
+         Proportion = Proportion %>% round(5)) %>% 
+  dplyr::rename("sample_IGH"="sample",
+                "CDR3.aa_IGH"="CDR3.aa",
+                "V.name_IGH"="V.name",
+                "J.name_IGH"="J.name",
+                "Clones_IGH"="Clones",
+                "Proportion_IGH"="Proportion") %>% 
+  unite(col = "sample2_Barcode", sample2, Barcode, sep = "__", remove = T) %>% 
+  mutate(IGH_expanded = if_else(Clones_IGH > expanded_cutoff, "expanded", "not_expanded"),
+         IGH_cloneSize = case_when(Proportion_IGH >= 0.9    & Proportion_IGH < 1     ~ "Hyperexpanded",
+                                   Proportion_IGH >= 0.1    & Proportion_IGH < 0.9   ~ "Large",
+                                   Proportion_IGH >= 0.01   & Proportion_IGH < 0.1   ~ "Medium",
+                                   Proportion_IGH >= 0.001  & Proportion_IGH < 0.01  ~ "Small",
+                                   Proportion_IGH >= 0.0001 & Proportion_IGH < 0.001 ~ "Rare",
+                                   TRUE ~ "ERROR")) %>% 
+  arrange(sample2_Barcode)
+scTCR.im.prop_recalcd.IGH.cell_barcode.df %>% dim() # [1] 1302     9
+# scTCR.im.prop_recalcd.IGH.cell_barcode.df
+```
+
+## wrangle IGK
+
+```{r}
+scTCR.im.prop_recalcd.IGK.cell_barcode.df =
+  scBCR.im.prop_recalcd.IGK.list %>% 
+  bind_rows(., .id = "sample") %>% 
+  dplyr::select(sample, Barcode, CDR3.aa, V.name, J.name, Clones, Proportion) %>%
+  tidyr::separate_longer_delim(c(Barcode), delim = ";") %>% 
+  mutate(sample2 = sample %>% gsub("_filtered_contig_annotations_IGK", "", .),
+         Proportion = Proportion %>% round(5)) %>% 
+  dplyr::rename("sample_IGK"="sample",
+                "CDR3.aa_IGK"="CDR3.aa",
+                "V.name_IGK"="V.name",
+                "J.name_IGK"="J.name",
+                "Clones_IGK"="Clones",
+                "Proportion_IGK"="Proportion") %>% 
+  unite(col = "sample2_Barcode", sample2, Barcode, sep = "__", remove = T) %>% 
+  mutate(IGK_expanded = if_else(Clones_IGK > expanded_cutoff, "expanded", "not_expanded"),
+         IGK_cloneSize = case_when(Proportion_IGK >= 0.9    & Proportion_IGK < 1     ~ "Hyperexpanded",
+                                   Proportion_IGK >= 0.1    & Proportion_IGK < 0.9   ~ "Large",
+                                   Proportion_IGK >= 0.01   & Proportion_IGK < 0.1   ~ "Medium",
+                                   Proportion_IGK >= 0.001  & Proportion_IGK < 0.01  ~ "Small",
+                                   Proportion_IGK >= 0.0001 & Proportion_IGK < 0.001 ~ "Rare",
+                                   TRUE ~ "ERROR")) %>% 
+  arrange(sample2_Barcode)
+scTCR.im.prop_recalcd.IGK.cell_barcode.df %>% dim() # [1] 1010     9
+# scTCR.im.prop_recalcd.IGK.cell_barcode.df
+```
+
+## wrangle IGL
+
+```{r}
+scTCR.im.prop_recalcd.IGL.cell_barcode.df =
+  scBCR.im.prop_recalcd.IGL.list %>% 
+  bind_rows(., .id = "sample") %>% 
+  dplyr::select(sample, Barcode, CDR3.aa, V.name, J.name, Clones, Proportion) %>%
+  tidyr::separate_longer_delim(c(Barcode), delim = ";") %>% 
+  mutate(sample2 = sample %>% gsub("_filtered_contig_annotations_IGL", "", .),
+         Proportion = Proportion %>% round(5)) %>% 
+  dplyr::rename("sample_IGL"="sample",
+                "CDR3.aa_IGL"="CDR3.aa",
+                "V.name_IGL"="V.name",
+                "J.name_IGL"="J.name",
+                "Clones_IGL"="Clones",
+                "Proportion_IGL"="Proportion") %>% 
+  unite(col = "sample2_Barcode", sample2, Barcode, sep = "__", remove = T) %>% 
+  mutate(IGL_expanded = if_else(Clones_IGL > expanded_cutoff, "expanded", "not_expanded"),
+         IGL_cloneSize = case_when(Proportion_IGL >= 0.9    & Proportion_IGL < 1     ~ "Hyperexpanded",
+                                   Proportion_IGL >= 0.1    & Proportion_IGL < 0.9   ~ "Large",
+                                   Proportion_IGL >= 0.01   & Proportion_IGL < 0.1   ~ "Medium",
+                                   Proportion_IGL >= 0.001  & Proportion_IGL < 0.01  ~ "Small",
+                                   Proportion_IGL >= 0.0001 & Proportion_IGL < 0.001 ~ "Rare",
+                                   TRUE ~ "ERROR")) %>% 
+  arrange(sample2_Barcode)
+scTCR.im.prop_recalcd.IGL.cell_barcode.df %>% dim() # [1] 538     9
+# scTCR.im.prop_recalcd.IGL.cell_barcode.df %>% names() %>% cat(., sep = ", ")
+```
+
+## full_join IGH and IGK and IGL
+
+```{r}
+scTCR.im.prop_recalcd.IGH_K_L.cell_barcode.df = 
+  plyr::join_all(list(scTCR.im.prop_recalcd.IGH.cell_barcode.df, 
+                      scTCR.im.prop_recalcd.IGK.cell_barcode.df,
+                      scTCR.im.prop_recalcd.IGL.cell_barcode.df), 
+                 by=c("sample2_Barcode"), type = "full") %>% 
+  dplyr::select(sample2_Barcode, 
+                CDR3.aa_IGH, V.name_IGH, J.name_IGH, Clones_IGH, Proportion_IGH, IGH_expanded, IGH_cloneSize,                 
+                CDR3.aa_IGK, V.name_IGK, J.name_IGK, Clones_IGK, Proportion_IGK, IGK_expanded, IGK_cloneSize, 
+                CDR3.aa_IGL, V.name_IGL, J.name_IGL, Clones_IGL, Proportion_IGL, IGL_expanded, IGL_cloneSize)
+scTCR.im.prop_recalcd.IGH_K_L.cell_barcode.df %>% dim() # [1] 1556     22
+# scTCR.im.prop_recalcd.IGH_K_L.cell_barcode.df
+```
+
+## collapse {IGH;IGK;IGL}
+
+```{r}
+scBCR.im.prop_recalcd.IGH_K_L.cell_barcode.collapsed =
+  scTCR.im.prop_recalcd.IGH_K_L.cell_barcode.df %>% 
+  group_by(sample2_Barcode) %>%
+  summarize(CDR3.aa_IGH    = paste(CDR3.aa_IGH,    collapse = ";"), 
+            V.name_IGH     = paste(V.name_IGH,     collapse = ";"), 
+            J.name_IGH     = paste(J.name_IGH,     collapse = ";"), 
+            Clones_IGH     = paste(Clones_IGH,     collapse = ";"), 
+            Proportion_IGH = paste(Proportion_IGH, collapse = ";"), 
+            IGH_expanded   = paste(IGH_expanded,   collapse = ";"), 
+            IGH_cloneSize  = paste(IGH_cloneSize,  collapse = ";"), 
+            
+            CDR3.aa_IGK    = paste(CDR3.aa_IGK,    collapse = ";"), 
+            V.name_IGK     = paste(V.name_IGK,     collapse = ";"), 
+            J.name_IGK     = paste(J.name_IGK,     collapse = ";"), 
+            Clones_IGK     = paste(Clones_IGK,     collapse = ";"), 
+            Proportion_IGK = paste(Proportion_IGK, collapse = ";"), 
+            IGK_expanded   = paste(IGK_expanded,   collapse = ";"), 
+            IGK_cloneSize  = paste(IGK_cloneSize,  collapse = ";"), 
+            
+            CDR3.aa_IGL    = paste(CDR3.aa_IGL,    collapse = ";"), 
+            V.name_IGL     = paste(V.name_IGL,     collapse = ";"), 
+            J.name_IGL     = paste(J.name_IGL,     collapse = ";"), 
+            Clones_IGL     = paste(Clones_IGL,     collapse = ";"), 
+            Proportion_IGL = paste(Proportion_IGL, collapse = ";"), 
+            IGL_expanded   = paste(IGL_expanded,   collapse = ";"), 
+            IGL_cloneSize  = paste(IGL_cloneSize,  collapse = ";")) %>% 
+  mutate(across(everything(), .fns = ~ gsub("^NA;.*NA$", "NA", .x)))
+scBCR.im.prop_recalcd.IGH_K_L.cell_barcode.collapsed %>% dim() # [1] 1542   22
+# scBCR.im.prop_recalcd.IGH_K_L.cell_barcode.collapsed
+```
+
+## sanity checks
+
+```{r}
+## cells expressing max 1 BCR
+scBCR.im.prop_recalcd.IGH_K_L.cell_barcode.collapsed %>% dplyr::filter(str_detect(CDR3.aa_IGH, ";", negate = T)) %>% nrow() # [1] 1532
+scBCR.im.prop_recalcd.IGH_K_L.cell_barcode.collapsed %>% dplyr::filter(str_detect(CDR3.aa_IGK, ";", negate = T)) %>% nrow() # [1] 1534
+scBCR.im.prop_recalcd.IGH_K_L.cell_barcode.collapsed %>% dplyr::filter(str_detect(CDR3.aa_IGL, ";", negate = T)) %>% nrow() # [1] 1539
+
+## cells express IGH + IGK or IGL
+temp1 = scBCR.im.prop_recalcd.IGH_K_L.cell_barcode.collapsed
+temp1 %>% dplyr::filter(!str_detect(CDR3.aa_IGH, "^NA$") &  str_detect(CDR3.aa_IGK, "^NA$") &  str_detect(CDR3.aa_IGL, "^NA$")) # [1] 6   <-- only IGH
+temp1 %>% dplyr::filter( str_detect(CDR3.aa_IGH, "^NA$") & !str_detect(CDR3.aa_IGK, "^NA$") &  str_detect(CDR3.aa_IGL, "^NA$")) # [1] 149 <-- only IGK
+temp1 %>% dplyr::filter( str_detect(CDR3.aa_IGH, "^NA$") &  str_detect(CDR3.aa_IGK, "^NA$") & !str_detect(CDR3.aa_IGL, "^NA$")) # [1] 94  <-- only IGL
+temp1 %>% dplyr::filter( str_detect(CDR3.aa_IGH, "^NA$") & !str_detect(CDR3.aa_IGK, "^NA$") & !str_detect(CDR3.aa_IGL, "^NA$")) # [1] 0   <-- only IGK + IGL
+temp1 %>% dplyr::filter(!str_detect(CDR3.aa_IGH, "^NA$") & !str_detect(CDR3.aa_IGK, "^NA$") & !str_detect(CDR3.aa_IGL, "^NA$")) # [1] 3   <-- IGH + IGK + IGL
+temp1 %>% dplyr::filter(!str_detect(CDR3.aa_IGH, "^NA$") & !str_detect(CDR3.aa_IGK, "^NA$") &  str_detect(CDR3.aa_IGL, "^NA$")) # [1] 851 <-- with IGH + IGK
+temp1 %>% dplyr::filter(!str_detect(CDR3.aa_IGH, "^NA$") &  str_detect(CDR3.aa_IGK, "^NA$") & !str_detect(CDR3.aa_IGL, "^NA$")) # [1] 439 <-- with IGH + IGL
+
+94 + 6 + 149 + 0 + 3 + 851 + 439 # [1] 1542 <-- matches total B cells
+```
+
+## get scBCR.metadata
+
+```{r}
+scBCR.metadata =
+  scBCR.im.prop_recalcd.IGH_K_L.cell_barcode.collapsed %>% 
+  mutate(Bcell = "yesBCR",
+         IGH_num = case_when(!str_detect(CDR3.aa_IGH, ";") ~ "IGH_single",
+                              str_detect(CDR3.aa_IGH, ";") ~ "IGH_multiple"),
+         IGK_num = case_when(!str_detect(CDR3.aa_IGK, ";") ~ "IGK_single",
+                              str_detect(CDR3.aa_IGK, ";") ~ "IGK_multiple"),
+         IGL_num = case_when(!str_detect(CDR3.aa_IGL, ";") ~ "IGL_single",
+                              str_detect(CDR3.aa_IGL, ";") ~ "IGL_multiple"),
+         IGH_K_L = case_when(
+           !str_detect(CDR3.aa_IGH, "^NA$") &  str_detect(CDR3.aa_IGK, "^NA$") &  str_detect(CDR3.aa_IGL, "^NA$") ~ "IGH_only", 
+            str_detect(CDR3.aa_IGH, "^NA$") & !str_detect(CDR3.aa_IGK, "^NA$") &  str_detect(CDR3.aa_IGL, "^NA$") ~ "IGK_only", 
+            str_detect(CDR3.aa_IGH, "^NA$") &  str_detect(CDR3.aa_IGK, "^NA$") & !str_detect(CDR3.aa_IGL, "^NA$") ~ "IGL_only", 
+            str_detect(CDR3.aa_IGH, "^NA$") & !str_detect(CDR3.aa_IGK, "^NA$") & !str_detect(CDR3.aa_IGL, "^NA$") ~ "IGK_IGLonly", 
+           !str_detect(CDR3.aa_IGH, "^NA$") & !str_detect(CDR3.aa_IGK, "^NA$") & !str_detect(CDR3.aa_IGL, "^NA$") ~ "IGH_IGK_IGL", 
+           !str_detect(CDR3.aa_IGH, "^NA$") & !str_detect(CDR3.aa_IGK, "^NA$") &  str_detect(CDR3.aa_IGL, "^NA$") ~ "IGH_IGK", 
+           !str_detect(CDR3.aa_IGH, "^NA$") &  str_detect(CDR3.aa_IGK, "^NA$") & !str_detect(CDR3.aa_IGL, "^NA$") ~ "IGH_IGL", 
+           TRUE ~ "ERROR"))
+scBCR.metadata %>% dim() # [1] 1542   27
+```
+
+## saveRDS()
+
+```{r}
+# scBCR.metadata %>% saveRDS(., file.path(dir.out.data, "scBCR.metadata.Rds"))
+```
+
+## inspect metadata
+
+```{r}
+scBCR.metadata$IGH_num %>% table() # IGH_multiple-10   IGH_single-1532
+scBCR.metadata$IGK_num %>% table() # IGK_multiple-8    IGK_single-1534
+scBCR.metadata$IGL_num %>% table() # IGL_multiple-3    IGL_single-1539
+
+scBCR.metadata$IGH_K_L %>% table()
+#    IGH_IGK IGH_IGK_IGL     IGH_IGL    IGH_only    IGK_only    IGL_only 
+#        851           3         439           6         149          94 
+
+scBCR.metadata$IGH_expanded  %>% table() %>% as.data.frame()
+scBCR.metadata$IGH_cloneSize %>% table() %>% as.data.frame()
+scBCR.metadata$IGH_num       %>% table() %>% as.data.frame()
+scBCR.metadata$IGK_expanded  %>% table() %>% as.data.frame()
+scBCR.metadata$IGK_cloneSize %>% table() %>% as.data.frame()
+scBCR.metadata$IGK_num       %>% table() %>% as.data.frame()
+scBCR.metadata$IGL_expanded  %>% table() %>% as.data.frame()
+scBCR.metadata$IGL_cloneSize %>% table() %>% as.data.frame()
+scBCR.metadata$IGL_num       %>% table() %>% as.data.frame()
+```
+
+# --------------------------------------------
+
+# merge scTCR + scBCR metadata
+
+```{r}
+scTCR.scBCR.metadata = 
+  plyr::join_all(list(scTCR.metadata, scBCR.metadata), by="sample2_Barcode", type = "full") %>% 
+  mutate(Tcell = if_else(is.na(Tcell), "noTCR", Tcell)) %>% 
+  mutate(Bcell = if_else(is.na(Bcell), "noBCR", Bcell)) %>% 
+  dplyr::select(sample2_Barcode, Tcell, Bcell, TRB_expanded, TRB_cloneSize, everything())
+scTCR.scBCR.metadata
+```
+
+# saveRDS()
+
+```{r}
+# scTCR.scBCR.metadata %>% saveRDS(., file.path(dir.out.data, paste0(PROJ_BATCH, ".scTCR.scBCR.metadata.Rds")))
+```
+
+<br>
+
+# EOF

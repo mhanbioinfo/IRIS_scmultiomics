@@ -1,0 +1,78 @@
+---
+title: "2023_07_12_1630-IRIS_batch1_split_GEX_FB"
+author: "Ming"
+date: "`r format(Sys.time(), '%Y_%m_%d_%H_%M')`"
+---
+
+```{r setup, include=FALSE}
+# knitr::opts_chunk$set(eval = FALSE)      ## no run
+# knitr::opts_chunk$set(include = FALSE)   ## yes run, no code, no output
+knitr::opts_chunk$set(echo = TRUE)         ## yes run, no code, yes output ( for figures )
+knitr::opts_chunk$set(results = 'hide')    ## yes run, yes code, no output
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(warning = FALSE)
+suppressPackageStartupMessages(library(tidyverse))
+suppressPackageStartupMessages(library(ggplot2))
+'%ni%' <- Negate('%in%')
+# options(scipen = 999)       # decimals
+# options(scipen = 0)         # sci notation
+# options(max.print=999999)
+
+dir.data = "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/data"
+
+dir.create(path = file.path(dir.data, "../out_scRNAseq"))
+dir.create(path = file.path(dir.data, "../out_scCITEseq"))
+```
+
+# read in data
+
+## batch1
+
+```{r}
+## IRS_0004_A_003
+IRS_0004_A_003 = Seurat::Read10X(data.dir = file.path(dir.data, "IRS-0004-A-003_RNA_CITEseq/IRS-0004-A-003_filtered_feature_bc_matrix"))
+DropletUtils::write10xCounts(path = file.path(dir.data, "../out_scRNAseq/IRS_0004_A_003"), x = IRS_0004_A_003$`Gene Expression`, type = "sparse", version="3")
+DropletUtils::write10xCounts(path = file.path(dir.data, "../out_scCITEseq/IRS_0004_A_003"), x = IRS_0004_A_003$`Antibody Capture`, type = "sparse", version="3")
+
+## IRS_0014_P_014
+IRS_0014_P_014 = Seurat::Read10X(data.dir = file.path(dir.data, "IRS-0014-P-014_RNA_CITEseq/IRS-0014-P-014_filtered_feature_bc_matrix"))
+DropletUtils::write10xCounts(path = file.path(dir.data, "../out_scRNAseq/IRS_0014_P_014"), x = IRS_0014_P_014$`Gene Expression`, type = "sparse", version="3")
+DropletUtils::write10xCounts(path = file.path(dir.data, "../out_scCITEseq/IRS_0014_P_014"), x = IRS_0014_P_014$`Antibody Capture`, type = "sparse", version="3")
+
+## IRS_0023_P_023
+IRS_0023_P_023 = Seurat::Read10X(data.dir = file.path(dir.data, "IRS-0023-P-023_RNA_CITEseq/IRS-0023-P-023_filtered_feature_bc_matrix"))
+DropletUtils::write10xCounts(path = file.path(dir.data, "../out_scRNAseq/IRS_0023_P_023"), x = IRS_0023_P_023$`Gene Expression`, type = "sparse", version="3")
+DropletUtils::write10xCounts(path = file.path(dir.data, "../out_scCITEseq/IRS_0023_P_023"), x = IRS_0023_P_023$`Antibody Capture`, type = "sparse", version="3")
+
+## IRS_0055_P_055
+IRS_0055_P_055 = Seurat::Read10X(data.dir = file.path(dir.data, "IRS-0055-P-055_RNA_CITEseq/IRS-0055-P-055_filtered_feature_bc_matrix"))
+DropletUtils::write10xCounts(path = file.path(dir.data, "../out_scRNAseq/IRS_0055_P_055"), x = IRS_0055_P_055$`Gene Expression`, type = "sparse", version="3")
+DropletUtils::write10xCounts(path = file.path(dir.data, "../out_scCITEseq/IRS_0055_P_055"), x = IRS_0055_P_055$`Antibody Capture`, type = "sparse", version="3")
+```
+
+## batch2
+
+```{r}
+## IRS-015-A-015
+IRS_015_A_015 = Seurat::Read10X(data.dir = file.path(dir.data, "IRS-015-A-015_RNA_CITEseq/IRS-015-A-015_filtered_feature_bc_matrix"))
+DropletUtils::write10xCounts(path = file.path(dir.data, "../out_scRNAseq/IRS_015_A_015"),  x = IRS_015_A_015$`Gene Expression`, type = "sparse", version="3")
+DropletUtils::write10xCounts(path = file.path(dir.data, "../out_scCITEseq/IRS_015_A_015"), x = IRS_015_A_015$`Antibody Capture`, type = "sparse", version="3")
+
+## IRS-0038-P-038
+IRS_0038_P_038 = Seurat::Read10X(data.dir = file.path(dir.data, "IRS-0038-P-038_RNA_CITEseq/IRS-0038-P-038_filtered_feature_bc_matrix"))
+DropletUtils::write10xCounts(path = file.path(dir.data, "../out_scRNAseq/IRS_0038_P_038"),  x = IRS_0038_P_038$`Gene Expression`, type = "sparse", version="3")
+DropletUtils::write10xCounts(path = file.path(dir.data, "../out_scCITEseq/IRS_0038_P_038"), x = IRS_0038_P_038$`Antibody Capture`, type = "sparse", version="3")
+```
+
+## batch3
+
+```{r}
+## IRS-002-A-001
+IRS_002_A_001 = Seurat::Read10X(data.dir = file.path(dir.data, "IRS-002-A-001_RNA_CITEseq/IRS-002-A-001_filtered_feature_bc_matrix"))
+DropletUtils::write10xCounts(path = file.path(dir.data, "../out_scRNAseq/IRS_002_A_001"),  x = IRS_002_A_001$`Gene Expression`, type = "sparse", version="3")
+DropletUtils::write10xCounts(path = file.path(dir.data, "../out_scCITEseq/IRS_002_A_001"), x = IRS_002_A_001$`Antibody Capture`, type = "sparse", version="3")
+```
+
+<br>
+
+# EOF

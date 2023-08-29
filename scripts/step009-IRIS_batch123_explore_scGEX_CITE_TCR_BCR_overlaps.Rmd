@@ -1,0 +1,370 @@
+---
+title: "step009-IRIS_batch123_explore_scGEX_CITE_TCR_BCR_overlaps"
+author: "Ming"
+date: "`r format(Sys.time(), '%Y_%m_%d_%H_%M')`"
+---
+
+```{r setup, include=FALSE}
+# knitr::opts_chunk$set(eval = FALSE)      ## no run
+# knitr::opts_chunk$set(include = FALSE)   ## yes run, no code, no output
+knitr::opts_chunk$set(echo = TRUE)         ## yes run, no code, yes output ( for figures )
+knitr::opts_chunk$set(results = 'hide')    ## yes run, yes code, no output
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(warning = FALSE)
+suppressPackageStartupMessages(library(tidyverse))
+suppressPackageStartupMessages(library(ggplot2))
+'%ni%' = Negate('%in%')
+# options(scipen = 999)       # decimals
+# options(scipen = 0)         # sci notation
+# options(max.print=999999)
+
+dir.ref                 = "/Users/minghan/bioinfoproj/references"
+dir.clin                = "/Users/minghan/GDrive_minghanpughlab/PughLabPMH/_projects/IRIS/_clin"
+dir.data                = "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/data"
+dir.out.data            = "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/out_data"
+dir.out.figure.analysis = "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/out_figures_analysis"
+dir.out.figure.qc       = "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/out_figures_qc"
+dir.out.data.gliphii    = "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/out_GLIPHII"
+
+PROJ = "IRIS"
+PROJ_BATCH = "IRIS_batch123"
+
+colours_n40 = 
+  c("dodgerblue2", "#E31A1C", "green4", "#6A3D9A", "#FF7F00", 
+    "gold1", "gray70", "#C1645C", "skyblue2", "#FB9A99", "palegreen2", 
+    "#CAB2D6", "#FDBF6F", "#D46A43", "khaki2", "maroon", 
+    "orchid1", "deeppink1", "blue1", "steelblue4", "darkturquoise", 
+    "green1", "yellow4", "yellow3", "darkorange4", "brown",
+    "#5C9A5C", "#CC8BAD", "#B8782A", "#546C9D", "#459E6F",
+    
+    "chocolate4", "chartreuse4", "burlywood", "deeppink4", "lightslateblue",
+    "firebrick", "mintcream", "mediumpurple3", "springgreen4", "slateblue4")
+```
+
+# readRDS()
+
+```{r}
+crescent.seurat.obj.singleR.encode.scmulti = readRDS(file.path(dir.out.data, paste0(PROJ_BATCH, ".crescent.seurat.obj.singleR.encode.all_metadata_attached.Rds")))
+crescent.seurat.obj.singleR.encode.scmulti@meta.data
+```
+
+# get cell numbers
+
+## TCR BCR
+
+```{r}
+scTCR.scBCR.metadata = 
+  readRDS(file.path(dir.out.data, paste0(PROJ_BATCH, ".scTCR.scBCR.metadata.Rds"))) %>% 
+  mutate(dataset = sample2_Barcode %>% gsub(".{17}$", "", .)) %>% 
+  mutate(Tcell_Bcell = paste0(Tcell, "_", Bcell)) %>% 
+  dplyr::select(dataset, Tcell_Bcell, everything())
+scTCR.scBCR.metadata
+
+scTCR.scBCR.metadata$Tcell_Bcell %>% table()
+# noTCR_yesBCR  yesTCR_noBCR yesTCR_yesBCR 
+#         1392         16786           150 
+
+scTCR.scBCR.metadata %>% dplyr::select(dataset, Tcell_Bcell) %>% table() %>% addmargins()
+#                 Tcell_Bcell
+# dataset          noTCR_yesBCR yesTCR_noBCR yesTCR_yesBCR   Sum
+#   IRS_0004_A_003          133          831            10   974
+#   IRS_0014_P_014           41          192             0   233
+#   IRS_002_A_001            61         2489             7  2557
+#   IRS_0023_P_023          683         3814            88  4585
+#   IRS_0025_A_025           79          145             3   227
+#   IRS_0032_A_032           23          241             4   268
+#   IRS_0038_P_038          100         2001            13  2114
+#   IRS_0055_P_055          185         3961            16  4162
+#   IRS_0056_P_056           12         1198             3  1213
+#   IRS_008_P_008             0          123             0   123
+#   IRS_015_A_015            75         1791             6  1872
+#   Sum                    1392        16786           150 18328
+```
+
+## TCR BCR - GEX overlap
+
+```{r}
+crescent.seurat.obj.singleR.encode.scmulti@meta.data %>% nrow() # [1] 45964
+crescent.seurat.obj.singleR.encode.scmulti@meta.data$dataset %>% table() %>% as.data.frame() %>% arrange(Freq) %>% print.data.frame()
+#                 .  Freq
+# 1   IRS_008_P_008   235
+# 2  IRS_0025_A_025   382
+# 3  IRS_0032_A_032   907
+# 4  IRS_0056_P_056   956
+# 5  IRS_0014_P_014  1519
+# 6  IRS_0004_A_003  3152
+# 7   IRS_002_A_001  3840
+# 8  IRS_0055_P_055  7461
+# 9  IRS_0038_P_038  7925
+# 10  IRS_015_A_015  9241
+# 11 IRS_0023_P_023 10346
+
+crescent.seurat.obj.singleR.encode.scmulti@meta.data %>% dplyr::select(dataset, Tcell_Bcell) %>% table() %>% addmargins()
+#                 Tcell_Bcell
+# dataset          NA_NA noTCR_yesBCR yesTCR_noBCR yesTCR_yesBCR   Sum
+#   IRS_0004_A_003  2286           82          776             8  3152
+#   IRS_0014_P_014  1331           13          175             0  1519
+#   IRS_002_A_001   1528           22         2284             6  3840
+#   IRS_0023_P_023  6213          578         3476            79 10346
+#   IRS_0025_A_025   200           43          136             3   382
+#   IRS_0032_A_032   650           18          235             4   907
+#   IRS_0038_P_038  5971           73         1869            12  7925
+#   IRS_0055_P_055  3449          148         3849            15  7461
+#   IRS_0056_P_056   542            9          402             3   956
+#   IRS_008_P_008    114            0          121             0   235
+#   IRS_015_A_015   7586           40         1610             5  9241
+#   Sum            29870         1026        14933           135 45964
+```
+
+# singleR annot - TCR - BCR overlap
+
+## before annotation revision
+
+- summary
+    - 79% of singleR labeled T cells were cells assayed by scTCR ( Quah,2023 concordance 60% )
+    - only 4.8% of singleR labeled as NOT T cells were cells assayed by scTCR ( Quah,2023 concordance 3.2% )
+
+```{r}
+crescent.seurat.obj.singleR.encode.scmulti.annotation_stats = 
+  crescent.seurat.obj.singleR.encode.scmulti@meta.data %>% 
+  dplyr::select(singleR.labels, Tcell_Bcell) %>% table() %>% as.data.frame() %>% 
+  pivot_wider(id_cols = singleR.labels, names_from = "Tcell_Bcell", values_from = "Freq") %>% 
+  arrange(NA_NA, noTCR_yesBCR, yesTCR_noBCR, yesTCR_yesBCR) 
+crescent.seurat.obj.singleR.encode.scmulti.annotation_stats %>% print.data.frame()
+#       singleR.labels NA_NA noTCR_yesBCR yesTCR_noBCR yesTCR_yesBCR
+# 1    Skeletal muscle     1            0            0             0
+# 2        Eosinophils    73            0            0             0
+# 3      Smooth muscle   124            0            0             0
+# 4        Neutrophils   161            0            1             0
+# 5            B-cells   218          493            4            33
+# 6         Adipocytes   719           92           69             2
+# 7       CD4+ T-cells   891            2         2223             7
+# 8           NK cells  1355           15          164             0
+# 9                 DC  1511            9          154             2
+# 10  Epithelial cells  1785            5           56             0
+# 11 Endothelial cells  2397            3           72             2
+# 12      CD8+ T-cells  2546           25        10842            28
+# 13       Macrophages  2939          136          340            24
+# 14         Monocytes  5582          108          563            21
+# 15       Fibroblasts  9568          138          445            16
+```
+
+## after annotation revision
+
+```{r}
+crescent.seurat.obj.singleR.encode.scmulti@meta.data %>% 
+  dplyr::select(singleR.labels.revised, Tcell_Bcell) %>% table() %>% as.data.frame() %>% 
+  pivot_wider(id_cols = singleR.labels.revised, names_from = "Tcell_Bcell", values_from = "Freq") %>% 
+  arrange(NA_NA, noTCR_yesBCR, yesTCR_noBCR, yesTCR_yesBCR) %>% print.data.frame()
+#    singleR.labels.revised NA_NA noTCR_yesBCR yesTCR_noBCR yesTCR_yesBCR
+# 1   TCR_BCR_DualExpressor     0            0            0           135
+# 2         Neutrophils_TCR     0            0            1             0
+# 3             B-cells_TCR     0            0            4             0
+# 4    Epithelial cells_TCR     0            0           56             0
+# 5          Adipocytes_TCR     0            0           69             0
+# 6   Endothelial cells_TCR     0            0           72             0
+# 7                  DC_TCR     0            0          154             0
+# 8            NK cells_TCR     0            0          164             0
+# 9         Macrophages_TCR     0            0          340             0
+# 10        Fibroblasts_TCR     0            0          445             0
+# 11          Monocytes_TCR     0            0          563             0
+# 12           CD4+ T-cells     0            0         2223             0
+# 13           CD8+ T-cells     0            0        10842             0
+# 14                B-cells     0         1026            0             0
+# 15        Skeletal muscle     1            0            0             0
+# 16            Eosinophils    73            0            0             0
+# 17          Smooth muscle   124            0            0             0
+# 18            Neutrophils   161            0            0             0
+# 19          B-cells_noBCR   218            0            0             0
+# 20             Adipocytes   719            0            0             0
+# 21     CD4+ T-cells_noTCR   891            0            0             0
+# 22               NK cells  1355            0            0             0
+# 23                     DC  1511            0            0             0
+# 24       Epithelial cells  1785            0            0             0
+# 25      Endothelial cells  2397            0            0             0
+# 26     CD8+ T-cells_noTCR  2546            0            0             0
+# 27            Macrophages  2939            0            0             0
+# 28              Monocytes  5582            0            0             0
+# 29            Fibroblasts  9568            0            0             0
+```
+
+
+```{r}
+scGEX.scTCR.scBCR.metadata.GEX_TCR_BCR.overlap_stats =
+  scGEX.scTCR.scBCR.metadata %>% 
+  mutate(Tcell_Bcell = paste0(Tcell, "_", Bcell)) %>% 
+  dplyr::select(singleR.labels, Tcell_Bcell) %>% table() %>% 
+  as.data.frame() %>% 
+  # arrange(desc(Tcell_Bcell), desc(Freq)) %>% 
+  pivot_wider(id_cols = singleR.labels, names_from = "Tcell_Bcell", values_from = "Freq") %>% # names() %>% cat(., sep="\n")
+  mutate(total              = noTCR_noBCR + noTCR_yesBCR + yesTCR_noBCR + yesTCR_yesBCR,
+         noTCR_noBCR_prop   = noTCR_noBCR / total,
+         noTCR_yesBCR_prop  = noTCR_yesBCR / total,
+         yesTCR_noBCR_prop  = yesTCR_noBCR / total,
+         yesTCR_yesBCR_prop = yesTCR_yesBCR / total) %>% 
+  arrange(desc(yesTCR_noBCR), desc(noTCR_yesBCR)) %>% 
+  dplyr::select(singleR.labels, 
+                yesTCR_noBCR, noTCR_yesBCR, yesTCR_yesBCR, noTCR_noBCR,
+                yesTCR_noBCR_prop, noTCR_yesBCR_prop, yesTCR_yesBCR_prop, noTCR_noBCR_prop)
+
+scGEX.scTCR.scBCR.metadata.GEX_TCR_BCR.overlap_stats %>% 
+  print.data.frame()
+
+#          singleR.labels yesTCR_noBCR noTCR_yesBCR yesTCR_yesBCR noTCR_noBCR yesTCR_noBCR_prop noTCR_yesBCR_prop yesTCR_yesBCR_prop noTCR_noBCR_prop
+# 1               T_cells        12998           36            51        3297       0.793431815       0.002197534       0.0031131730        0.2012575
+# 2               NK_cell          470           53             1        1823       0.200255646       0.022582020       0.0004260758        0.7767363
+# 3            Macrophage          466          162            20        4022       0.099785867       0.034689507       0.0042826552        0.8612420
+# 4     Tissue_stem_cells          417          101            11        7040       0.055093143       0.013343903       0.0014532963        0.9301097
+# 5              Monocyte          341           69            12        3063       0.097847920       0.019799139       0.0034433286        0.8789096
+# 6                    DC          318           51            10        2934       0.095985512       0.015393903       0.0030184123        0.8856022
+# 7           Fibroblasts          156           50            10        2501       0.057416268       0.018402650       0.0036805300        0.9205006
+# 8     Endothelial_cells           97            9             2        2708       0.034446023       0.003196023       0.0007102273        0.9616477
+# 9      Epithelial_cells           76            2             0        1907       0.038287154       0.001007557       0.0000000000        0.9607053
+# 10            iPS_cells           11            0             0         192       0.054187192       0.000000000       0.0000000000        0.9458128
+# 11  Smooth_muscle_cells            6            3             1         342       0.017045455       0.008522727       0.0028409091        0.9715909
+# 12               B_cell            4          509            21         301       0.004790419       0.609580838       0.0251497006        0.3604790
+# 13          Neutrophils            4            1             0         458       0.008639309       0.002159827       0.0000000000        0.9892009
+# 14                  MSC            2            0             0         127       0.015503876       0.000000000       0.0000000000        0.9844961
+# 15              Neurons            2            0             0          59       0.032786885       0.000000000       0.0000000000        0.9672131
+# 16     Pro-B_cell_CD34+            1            2             0           5       0.125000000       0.250000000       0.0000000000        0.6250000
+# 17          Hepatocytes            1            0             0          11       0.083333333       0.000000000       0.0000000000        0.9166667
+# 18           HSC_-G-CSF            1            0             0           2       0.333333333       0.000000000       0.0000000000        0.6666667
+# 19     Pre-B_cell_CD34-            0           17             0          32       0.000000000       0.346938776       0.0000000000        0.6530612
+# 20         Chondrocytes            0            2             0         193       0.000000000       0.010256410       0.0000000000        0.9897436
+# 21            HSC_CD34+            0            1             0           4       0.000000000       0.200000000       0.0000000000        0.8000000
+
+# 22                  CMP            0            0             0         205       0.000000000       0.000000000       0.0000000000        1.0000000
+# 23 Embryonic_stem_cells            0            0             0           1       0.000000000       0.000000000       0.0000000000        1.0000000
+# 24         Erythroblast            0            0             0           5       0.000000000       0.000000000       0.0000000000        1.0000000
+# 25                  GMP            0            0             0          50       0.000000000       0.000000000       0.0000000000        1.0000000
+# 26        Keratinocytes            0            0             0         104       0.000000000       0.000000000       0.0000000000        1.0000000
+# 27 Neuroepithelial_cell            0            0             0           2       0.000000000       0.000000000       0.0000000000        1.0000000
+# 28          Osteoblasts            0            0             0          70       0.000000000       0.000000000       0.0000000000        1.0000000
+# 29            Platelets            0            0             0           1       0.000000000       0.000000000       0.0000000000        1.0000000
+# 30        Pro-Myelocyte            0            0             0           1       0.000000000       0.000000000       0.0000000000        1.0000000
+
+scGEX.scTCR.scBCR.metadata.GEX_TCR_BCR.overlap_stats
+```
+
+### write.table()
+
+```{r}
+scGEX.scTCR.scBCR.metadata.GEX_TCR_BCR.overlap_stats %>% write.table(., file.path(dir.out.data, "scGEX.scTCR.scBCR.metadata.GEX_TCR_BCR.overlap_stats.csv"), quote = F, sep = ",", row.names = F)
+```
+
+### contingency table
+
+```{r}
+crescent.seurat.obj.singleR.encode.scmulti.annotation_stats.summed =
+  crescent.seurat.obj.singleR.encode.scmulti.annotation_stats %>% 
+  mutate(singleR.T_B = case_when(str_detect(singleR.labels, "T-cells") ~ "singleR.T_cells",
+                                 str_detect(singleR.labels, "B-cells") ~ "singleR.B_cells",
+                                 TRUE ~ "singleR.other_cells")) %>% 
+  group_by(singleR.T_B) %>% 
+  summarize(yesTCR_noBCR  = sum(yesTCR_noBCR),
+            noTCR_yesBCR  = sum(noTCR_yesBCR),
+            yesTCR_yesBCR = sum(yesTCR_yesBCR),
+            noTCR_noBCR   = sum(NA_NA)) %>% 
+  ungroup()
+crescent.seurat.obj.singleR.encode.scmulti.annotation_stats.summed %>% print.data.frame()
+#           singleR.T_B yesTCR_noBCR noTCR_yesBCR yesTCR_yesBCR noTCR_noBCR
+# 1     singleR.B_cells            4        [493]            33         218
+# 2     singleR.T_cells      [13065]           27            35        3437
+# 3 singleR.other_cells         1864          506            67       26215
+
+## plot
+crescent.seurat.obj.singleR.encode.scmulti.annotation_stats.summed %>% 
+  pivot_longer(-singleR.T_B, names_to = "scTCRseq", values_to = "cells") %>% 
+  mutate(singleR.T_B = factor(singleR.T_B, levels = c("singleR.T_cells", "singleR.B_cells", "singleR.other_cells")),
+         scTCRseq = factor(scTCRseq, levels = c("yesTCR_noBCR", "noTCR_yesBCR", "yesTCR_yesBCR", "noTCR_noBCR"))) %>% 
+  group_by(singleR.T_B) %>% 
+  mutate(pctg_annot_assayed = round(cells/sum(cells), 2)*100) %>% 
+  ungroup() %>% 
+  mutate(label_ = paste0(cells, " cells\n", pctg_annot_assayed, "%")) %>% 
+  ggplot(aes(scTCRseq, singleR.T_B, fill = cells)) +
+  geom_tile(color = 'black') +
+  geom_text(aes(label = label_)) +
+  coord_equal() +
+  scale_fill_gradient(low = "azure", high = "cornflowerblue") + 
+  theme_minimal(base_size = 16) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
+# ggsave(file.path(dir.out.figure.qc, paste0(PROJ_BATCH, ".crescent.seurat.obj.singleR.encode.scmulti.annotation_stats.summed.table.pdf")), 
+#        device = "pdf", width = 7, height = 6, units = "in")
+```
+
+# --------------------------------------------
+
+# literature
+
+## cells expressing both TCR and BCR
+
+- Ahmed,2019-A Public BCR Present in a Unique Dual-Receptor Expressing Lymphocyte from Type 1 Diabetes Patients Encodes a Potent T Cell Autoantigen
+- Japp,2021-TCR+BCR+ dual-expressing cells and their associated public BCR clonotype are not enriched in type 1 diabetes
+
+## what other cell types can express TCRs?
+
+- https://www.nature.com/articles/341159a0
+    - CD3-negative natural killer cells express ε TCR { but not alpha-beta TCR }
+- https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6059462/
+    - Although the presence of variant immunoreceptors on macrophages is unconventional, 
+    - recent studies have reported *TCR expression by non-lymphoid cells* [20], 
+    - including neutrophils [21] [22], eosinophils [23], and macrophages. 
+- https://www.nature.com/articles/nrmicro1657
+    - Natural killer T (NKT) cells are lymphocytes that express both a T-cell receptor (TCR), 
+    - and surface receptors for NK cells
+    - major population of NKT cells, called iNKT cells, expresses an invariant TCR α-chain
+    - https://en.wikipedia.org/wiki/Natural_killer_T_cell
+        - Type 1 NKT (iNKT), Type 2 NKT, NKT-like
+- https://pubmed.ncbi.nlm.nih.gov/23312956/
+    - Recent evidence indicates that monocytes and macrophages express \
+    T cell receptor (TCR)αβ-like combinatorial immune receptors
+
+## CD4+CD8+ DP T cells
+
+- https://pubmed.ncbi.nlm.nih.gov/15110234/
+    - The expression of CD4 and CD8alphabeta co-receptors on mature T cells is \
+    generally considered to be mutually exclusive and reflects subset-related, 
+    - specific functions (helper vs. cytolytic) and differences in \
+    major histocompatibility complex-restriction for antigen recognition. 
+    - However, double positive (DP) T cells expressing both CD4 and CD8 have \
+    been described in several pathological conditions as well as in normal individuals. 
+    - DP T cells represent a heterogeneous population. 
+    - Strong evidence indicates that in vivo terminally differentiated effector \
+    CD4 may acquire the alpha-chain of CD8.
+
+## CD4-CD8- DN T cells
+
+- https://www.frontiersin.org/articles/10.3389/fimmu.2022.816005/full
+    - CD3+CD4-CD8- double-negative (DN) T cells, 
+    - although constituting a rare subset of peripheral T cells, 
+    - are gaining interest for their roles in inflammation, immune disease and cancer
+
+## T cells express two αβTCRs
+
+- https://www.ncbi.nlm.nih.gov/pmc/articles/PMC4701647/
+    - A small percentage of peripheral T cells express two αβTCRs. 
+    - Both of these receptors are functional and can mediate immune responses. 
+    - Dual TCR expression arises naturally as a consequence of simultaneous \
+    rearrangement of both TCRα loci which promotes efficient positive selection
+
+## CD3+ T cells w/o TCRs, 
+
+- { singleR annotated T cells could also just 
+    - not express any TCRs,
+    - or express so few that they were not detected }
+- https://www.pnas.org/doi/10.1073/pnas.0806289106
+    - a subset of CD4+ memory T (Tm)-cells can survive in the absence of TCR expression
+- https://www.cell.com/fulltext/S1074-7613(01)00170-4
+    - reduced TCR levels resulted in attenuated reactivity, 
+    - but response thresholds were substantially lower than expected—at \
+    as low as 1/20th the normal TCR numbers and with \
+    no indication of phenotypic skewing at suboptimal levels
+    - { so at low levels, can still have reactivity }
+    - Unlike B cells, T cells lacking antigen receptors did \
+    not die precipitously; instead, populations decayed gradually
+- https://www.cell.com/trends/immunology/fulltext/S1471-4906(01)02033-6
+    - Surviving without a TCR
+
+<br>
+
+# EOF

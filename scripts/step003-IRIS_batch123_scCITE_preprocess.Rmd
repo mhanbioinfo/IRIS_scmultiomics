@@ -1,0 +1,166 @@
+---
+title: "2023_07_31_0953-IRIS_batch123_scCITE_preprocess"
+author: "Ming"
+date: "`r format(Sys.time(), '%Y_%m_%d_%H_%M')`"
+---
+
+```{r setup, include=FALSE}
+# knitr::opts_chunk$set(eval = FALSE)      ## no run
+# knitr::opts_chunk$set(include = FALSE)   ## yes run, no code, no output
+knitr::opts_chunk$set(echo = TRUE)         ## yes run, no code, yes output ( for figures )
+knitr::opts_chunk$set(results = 'hide')    ## yes run, yes code, no output
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(warning = FALSE)
+suppressPackageStartupMessages(library(tidyverse))
+suppressPackageStartupMessages(library(ggplot2))
+'%ni%' <- Negate('%in%')
+# options(scipen = 999)       # decimals
+# options(scipen = 0)         # sci notation
+# options(max.print=999999)
+
+library(dsb)
+
+dir.data                = "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/data"
+dir.out.data            = "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/out_data"
+dir.out.figure.analysis = "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/out_figures_analysis"
+```
+
+# read in data
+
+## read in raw_feature_bc_matrix
+
+```{r}
+mtx.seurat.raw.list = list()
+for ( i in list.dirs(file.path(dir.data), full.names = T, recursive = T) %>% str_subset(., "raw_feature_bc_matrix") ) {
+  
+  # i = list.dirs(file.path(dir.data), full.names = T, recursive = T) %>% str_subset(., "raw_feature_bc_matrix") %>% .[1]; i
+  sample_name = i %>% gsub(".*data/", "", .) %>% gsub("_RNA.*", "", .); sample_name
+  mtx.seurat.raw.list[[sample_name]] = Seurat::Read10X(file.path(i))
+  
+}
+mtx.seurat.raw.list %>% names()
+# [1] "IRS-0004-A-003" "IRS-0014-P-014" "IRS-002-A-001"  "IRS-0023-P-023" "IRS-0025-A-025" "IRS-0032-A-032" 
+#     "IRS-0038-P-038" "IRS-0055-P-055" "IRS-0056-P-056" "IRS-0070-P-070" "IRS-008-P-008"  "IRS-015-A-015"
+```
+
+## read in filtered_feature_bc_matrix
+
+```{r}
+mtx.seurat.filtered.list = list()
+for ( i in list.dirs(file.path(dir.data), full.names = T, recursive = T) %>% str_subset(., "filtered_feature_bc_matrix") ) {
+  
+  # i = list.dirs(file.path(dir.data), full.names = T, recursive = T) %>% str_subset(., "filtered_feature_bc_matrix") %>% str_subset(., "IRS-0025-A-025", negate = T) %>% .[1]; i
+  sample_name = i %>% gsub(".*data/", "", .) %>% gsub("_RNA.*", "", .); sample_name
+  mtx.seurat.filtered.list[[sample_name]] = Seurat::Read10X(file.path(i))
+  
+}
+mtx.seurat.filtered.list %>% names()
+# [1] "IRS-0004-A-003" "IRS-0014-P-014" "IRS-002-A-001"  "IRS-0023-P-023" "IRS-0025-A-025" "IRS-0032-A-032" 
+#     "IRS-0038-P-038" "IRS-0055-P-055" "IRS-0056-P-056" "IRS-0070-P-070" "IRS-008-P-008"  "IRS-015-A-015" 
+```
+
+## define cell vs bkgd
+
+```{r}
+cells_barcodes.list = list()
+bkgd_barcodes.list = list()
+for ( i in mtx.seurat.filtered.list %>% names() ) {
+  
+  # i = mtx.seurat.filtered.list %>% names() %>% .[1]; i
+  if ( mtx.seurat.filtered.list[[i]] %>% names() %>% length() > 0 ) {
+    
+    print(paste0(i, " has GEX + ADT."))
+    cells_barcodes = mtx.seurat.filtered.list[[i]]$`Gene Expression` %>% colnames()
+    # cells_barcodes %>% length() # [1] 3602
+    cells_barcodes.list[[i]] = cells_barcodes
+    bkgd_barcodes.list[[i]] = setdiff(mtx.seurat.raw.list[[i]]$`Gene Expression` %>% colnames, cells_barcodes) # %>% length() # [1] 712249
+  
+  }
+}
+cells_barcodes.list %>% names() # [1] "IRS-0004-A-003" "IRS-0014-P-014" "IRS-002-A-001"  "IRS-0023-P-023" "IRS-0038-P-038" "IRS-0055-P-055" "IRS-015-A-015" 
+bkgd_barcodes.list %>% names() # [1] "IRS-0004-A-003" "IRS-0014-P-014" "IRS-002-A-001"  "IRS-0023-P-023" "IRS-0038-P-038" "IRS-0055-P-055" "IRS-015-A-015" 
+```
+
+## split raw GEX and ADT
+
+```{r}
+GEX.list = list()
+ADT.list = list()
+for ( i in mtx.seurat.raw.list %>% names() ) {
+  
+  # i = mtx.seurat.raw.list %>% names() %>% .[1]; i
+  if ( mtx.seurat.raw.list[[i]] %>% names() %>% length() > 0 ) {
+    
+    GEX.list[[i]] = mtx.seurat.raw.list[[i]]$`Gene Expression`
+    ADT.list[[i]] = mtx.seurat.raw.list[[i]]$`Antibody Capture`
+    
+  }
+}
+GEX.list %>% names() # [1] "IRS-0004-A-003" "IRS-0014-P-014" "IRS-002-A-001"  "IRS-0023-P-023" "IRS-0038-P-038" "IRS-0055-P-055" "IRS-015-A-015" 
+ADT.list %>% names() # [1] "IRS-0004-A-003" "IRS-0014-P-014" "IRS-002-A-001"  "IRS-0023-P-023" "IRS-0038-P-038" "IRS-0055-P-055" "IRS-015-A-015" 
+ADT.list[[1]] %>% dim() # [1]    137 715851
+ADT.list[[1]] %>% rownames() %>% str_subset("[i|I]sotype") %>% cat(sep = ", ")
+# Mouse_IgG1_k_isotype_Ctrl, Mouse_IgG2a_k_isotype_Ctrl, Mouse_IgG2b_k_isotype_Ctrl, 
+# Rat_IgG2b_k_Isotype_Ctrl,  Rat_IgG1_k_isotype_Ctrl,    Rat_IgG2a_k_Isotype_Ctrl, 
+# Armenian_Hamster_IgG_Isotype_Ctrl
+```
+
+# dsb
+
+```{r}
+## get cells mtx
+cells.adt.mtx.list = list()
+for ( i in mtx.seurat.raw.list %>% names() ) {
+  
+  # i = mtx.seurat.raw.list %>% names() %>% .[1]; i
+  # ADT.list[[i]] %>% dim() # [1]    137 715851
+  cells.adt.mtx.list[[i]] = ADT.list[[i]][, cells_barcodes.list[[i]]] # %>% dim() # [1]  137 3602
+  
+}
+cells.adt.mtx.list %>% names()
+cells.adt.mtx.list[[1]] %>% dim() # [1]    137 3602
+
+## get bkgd mtx
+bkgd.adt.mtx.list = list()
+for ( i in mtx.seurat.raw.list %>% names() ) {
+  
+  # i = mtx.seurat.raw.list %>% names() %>% .[1]; i
+  # ADT.list[[i]] %>% dim()
+  bkgd.adt.mtx.list[[i]] = ADT.list[[i]][, bkgd_barcodes.list[[i]]] # %>% dim() # [1]    137 712249
+  
+}
+bkgd.adt.mtx.list %>% names()
+bkgd.adt.mtx.list[[1]] %>% dim() # [1]    137 712249
+
+## get isotype control names
+isotype.controls = ADT.list[[1]] %>% rownames() %>% str_subset("[i|I]sotype")
+isotype.controls %>% length() # [1] 7
+
+## DSBNormalizeProtein
+dsb.norm.list = list()
+for ( i in mtx.seurat.raw.list %>% names() ) {
+  
+  # i = mtx.seurat.raw.list %>% names() %>% .[1]; i
+  dsb.norm.list[[i]] =
+    dsb::DSBNormalizeProtein(
+      cell_protein_matrix      = cells.adt.mtx.list[[i]], 
+      empty_drop_matrix        = bkgd.adt.mtx.list[[i]],  ## { using empty drops for noise#1 }
+      denoise.counts           = TRUE,                    ## define and remove technical cell-to-cell variation
+      use.isotype.control      = TRUE,                    ## if ADT panel has no isotype control - see "dsb with data lacking isotype controls"
+      isotype.control.name.vec = isotype.controls,        ## { using isotype controls for noise#2 }
+      return.stats             = TRUE
+    )
+  
+}
+dsb.norm.all = do.call(cbind, dsb.norm.list)
+```
+
+# saveRDS()
+
+```{r}
+dsb.norm.all %>% saveRDS(., file.path(dir.out.data, paste0(PROJ_BATCH, ".dsb.norm.all.Rds")))
+```
+
+<br>
+
+# EOF

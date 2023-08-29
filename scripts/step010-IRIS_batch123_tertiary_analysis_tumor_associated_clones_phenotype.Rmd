@@ -1,0 +1,136 @@
+---
+title: "step010-IRIS_batch123_tertiary_analysis_tumor_associated_clones_phenotype"
+author: "Ming"
+date: "`r format(Sys.time(), '%Y_%m_%d_%H_%M')`"
+---
+
+```{r setup, include=FALSE}
+# knitr::opts_chunk$set(eval = FALSE)      ## no run
+# knitr::opts_chunk$set(include = FALSE)   ## yes run, no code, no output
+knitr::opts_chunk$set(echo = TRUE)         ## yes run, no code, yes output ( for figures )
+knitr::opts_chunk$set(results = 'hide')    ## yes run, yes code, no output
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(warning = FALSE)
+suppressPackageStartupMessages(library(tidyverse))
+suppressPackageStartupMessages(library(ggplot2))
+'%ni%' = Negate('%in%')
+# options(scipen = 999)       # decimals
+# options(scipen = 0)         # sci notation
+# options(max.print=999999)
+
+dir.ref                 = "/Users/minghan/bioinfoproj/references"
+dir.clin                = "/Users/minghan/GDrive_minghanpughlab/PughLabPMH/_projects/IRIS/_clin"
+dir.data                = "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/data"
+dir.out.data            = "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/out_data"
+dir.out.figure.analysis = "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/out_figures_analysis"
+dir.out.figure.qc       = "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/out_figures_qc"
+
+PROJ = "IRIS"
+PROJ_BATCH = "IRIS_batch123"
+
+colours_n40 = 
+  c("dodgerblue2", "#E31A1C", "green4", "#6A3D9A", "#FF7F00", 
+    "gold1", "gray70", "#C1645C", "skyblue2", "#FB9A99", "palegreen2", 
+    "#CAB2D6", "#FDBF6F", "#D46A43", "khaki2", "maroon", 
+    "orchid1", "deeppink1", "blue1", "steelblue4", "darkturquoise", 
+    "green1", "yellow4", "yellow3", "darkorange4", "brown",
+    "#5C9A5C", "#CC8BAD", "#B8782A", "#546C9D", "#459E6F",
+    
+    "chocolate4", "chartreuse4", "burlywood", "deeppink4", "lightslateblue",
+    "firebrick", "mintcream", "mediumpurple3", "springgreen4", "slateblue4", "pink")
+
+library(Seurat)
+```
+
+# readRDS()
+
+## all cells
+
+```{r}
+crescent.seurat.obj.singleR.encode.scmulti = readRDS(file.path(dir.out.data, paste0(PROJ_BATCH, ".crescent.seurat.obj.singleR.encode.all_metadata_attached.Rds")))
+crescent.seurat.obj.singleR.encode.scmulti@meta.data %>% dplyr::select(dataset, Community_specificity_lean2) %>% table()
+#                 Community_specificity_lean2
+# dataset          no_GLIPHII_results tumor_associated_HomoSapiens tumor_associated_HomoSapiens_MDavis tumor_associated_MDavis viral_or_nonspecific
+#   IRS_0004_A_003               2980                            0                                   5                      44                  123
+#   IRS_0014_P_014               1507                            0                                   0                       6                    6
+#   IRS_002_A_001                3514                            0                                   4                      84                  238
+#   IRS_0023_P_023              10020                            1                                  35                     160                  130
+#   IRS_0025_A_025                371                            0                                   1                       7                    3
+#   IRS_0032_A_032                878                            0                                  15                       7                    7
+#   IRS_0038_P_038               7772                            0                                  28                      74                   51
+#   IRS_0055_P_055               7146                            1                                  24                     185                  105
+#   IRS_0056_P_056                925                            0                                   4                      18                    9
+#   IRS_008_P_008                 212                            0                                   1                       8                   14
+#   IRS_015_A_015                8793                            0                                 200                     127                  121
+```
+
+## T cells re-integrated
+
+```{r}
+crescent.seurat.obj.T_cells.integrated.no_gdT = readRDS(file.path(dir.out.data, paste0(PROJ_BATCH, ".crescent.seurat.obj.T_cells.integrated.no_gdT.annotated.Rds")))
+crescent.seurat.obj.T_cells.integrated.no_gdT # 34884 features across 12980 samples within 3 assays 
+
+## attach metadata
+crescent.seurat.obj.T_cells.integrated.no_gdT.meta.data = crescent.seurat.obj.T_cells.integrated.no_gdT@meta.data
+crescent.seurat.obj.T_cells.integrated.no_gdT@meta.data = 
+  crescent.seurat.obj.singleR.encode.scmulti@meta.data %>% 
+  dplyr::filter(rownames(.) %in% (crescent.seurat.obj.T_cells.integrated.no_gdT@meta.data %>% rownames())) %>% 
+  mutate(dataset = factor(dataset, levels = c("IRS_0004_A_003", "IRS_002_A_001", "IRS_0025_A_025", "IRS_0032_A_032", "IRS_015_A_015", 
+                                              "IRS_0014_P_014", "IRS_0023_P_023", "IRS_0038_P_038", "IRS_0055_P_055", "IRS_0056_P_056", "IRS_008_P_008")))
+crescent.seurat.obj.T_cells.integrated.no_gdT@meta.data
+```
+
+# --------------------------------------------
+
+# tumor associated clones
+
+## Community_specificity_lean
+
+### DimPlots()
+
+```{r}
+Seurat::DimPlot(crescent.seurat.obj.T_cells.integrated.no_gdT, reduction = "umap", group.by = "Community_specificity_lean") + scale_color_manual(values = c("grey", colours_n40[2:3]))
+Seurat::DimPlot(crescent.seurat.obj.T_cells.integrated.no_gdT, reduction = "umap", group.by = "Community_specificity_lean", split.by = "dataset", ncol = 4) + scale_color_manual(values = c("grey", colours_n40[2:3]))
+
+Seurat::DimPlot(crescent.seurat.obj.T_cells.integrated.no_gdT, reduction = "umap", group.by = "Community_specificity_lean", split.by = "clin_ResistanceType") + scale_color_manual(values = c("grey", colours_n40[2:3]))
+# ggsave(file.path(dir.out.figure.analysis, "crescent.seurat.obj.T_cells.integrated.no_gdT.taaTcells.byResistance.umap.png"), device = "png", width = 9, height = 4, units = "in", dpi = 300, bg = "white")
+
+Seurat::DimPlot(crescent.seurat.obj.T_cells.integrated.no_gdT, reduction = "umap", group.by = "Community_specificity_lean", split.by = "clin_p16_IHC") + scale_color_manual(values = c("grey", colours_n40[2:3]))
+# ggsave(file.path(dir.out.figure.analysis, "crescent.seurat.obj.T_cells.integrated.no_gdT.taaTcells.byHPV.umap.png"), device = "png", width = 9, height = 4, units = "in", dpi = 300, bg = "white")
+```
+
+## Community_specificity_lean2
+
+### DimPlots() - all
+
+```{r}
+Seurat::DimPlot(crescent.seurat.obj.T_cells.integrated.no_gdT, reduction = "umap", group.by = "Community_specificity_lean2") + scale_color_manual(values = c("grey", colours_n40[2:6]))
+Seurat::DimPlot(crescent.seurat.obj.T_cells.integrated.no_gdT, reduction = "umap", group.by = "Community_specificity_lean2", split.by = "dataset", ncol = 4) + scale_color_manual(values = c("grey", colours_n40[2:6]))
+```
+
+### DimPlots() - clin_ResistanceType
+
+```{r}
+Seurat::DimPlot(crescent.seurat.obj.T_cells.integrated.no_gdT, reduction = "umap", group.by = "Community_specificity_lean2", split.by = "clin_ResistanceType") + scale_color_manual(values = c("grey", colours_n40[2:6]))
+# ggsave(file.path(dir.out.figure.analysis, "crescent.seurat.obj.T_cells.integrated.no_gdT.taaTcells.byResistance.umap.png"), device = "png", width = 9, height = 4, units = "in", dpi = 300, bg = "white")
+```
+
+### DimPlots() - clin_p16_IHC
+
+```{r}
+Seurat::DimPlot(crescent.seurat.obj.T_cells.integrated.no_gdT, reduction = "umap", group.by = "Community_specificity_lean2", split.by = "clin_p16_IHC") + scale_color_manual(values = c("grey", colours_n40[2:6]))
+# ggsave(file.path(dir.out.figure.analysis, "crescent.seurat.obj.T_cells.integrated.no_gdT.taaTcells.byHPV.umap.png"), device = "png", width = 9, height = 4, units = "in", dpi = 300, bg = "white")
+```
+
+### DimPlots() - TMB categories
+
+```{r}
+
+```
+
+
+
+
+<br>
+
+# EOF

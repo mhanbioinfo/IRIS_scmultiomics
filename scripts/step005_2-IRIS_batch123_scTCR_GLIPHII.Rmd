@@ -1,0 +1,1294 @@
+---
+title: "2023_08_05_1500-IRIS_batch123_scTCR_GLIPHII"
+author: "Ming"
+date: "`r format(Sys.time(), '%Y_%m_%d_%H_%M')`"
+---
+
+```{r setup, include=FALSE}
+# knitr::opts_chunk$set(eval = FALSE)      ## no run
+# knitr::opts_chunk$set(include = FALSE)   ## yes run, no code, no output
+knitr::opts_chunk$set(echo = TRUE)         ## yes run, no code, yes output ( for figures )
+knitr::opts_chunk$set(results = 'hide')    ## yes run, yes code, no output
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(warning = FALSE)
+suppressPackageStartupMessages(library(tidyverse))
+suppressPackageStartupMessages(library(ggplot2))
+'%ni%' = Negate('%in%')
+# options(scipen = 999)       # decimals
+# options(scipen = 0)         # sci notation
+# options(max.print=999999)
+
+dir.clin                 = "/Users/minghan/GDrive_minghanpughlab/PughLabPMH/_projects/IRIS/_clin"
+dir.VDJdb                = "/Users/minghan/GDrive_minghanbio/1_Bioinformatics/_seqTCR/GLIPHII/VDJ_databases"
+
+dir.out.data             = "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/out_data"
+dir.data.scTCR           = "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/out_for_immunarch_scTCR"
+dir.out.data.gliphii     = "/Users/minghan/bioinfoproj/PughLabPMH/_projects/IRIS/scmulti/out_GLIPHII"
+
+PROJ = "IRIS"
+```
+
+# read in data
+
+## clin
+
+```{r}
+clin.df =
+  readxl::read_xlsx(file.path(dir.clin, "IRIS_GSK_Clinical_Data_2023_07_25.xlsx"), sheet = "IRIS_GSK_clin", na = "NA") %>% 
+  mutate(COHORT = PROJ) %>% 
+  mutate(TobaccoUse = case_when(TobaccoUse == "Yes" ~ "YesTobacco", TobaccoUse == "No" ~ "NoTobacco", TRUE ~ TobaccoUse),
+         p16_IHC    = case_when(p16_IHC == "Pos" ~ "PosHPV",        p16_IHC == "Neg" ~ "NegHPV",     TRUE ~ p16_IHC)) %>% 
+  mutate(Histology = Histology %>% gsub(" ", "", .),
+         Treatment = Treatment %>% gsub(" ", "", .),
+         PFS = PFS %>% round(2)) %>% 
+  dplyr::select(-Patient_ID_orig)
+# clin.df %>% dim() # [1] 12  18
+clin.df
+```
+
+# --------------------------------------------
+
+# scTCR data
+
+```{r}
+scTCR.im.prop_recalcd.TRA.list = readRDS(file.path(dir.out.data, "scTCR.im.prop_recalcd.TRA.list.Rds"))
+scTCR.im.prop_recalcd.TRB.list = readRDS(file.path(dir.out.data, "scTCR.im.prop_recalcd.TRB.list.Rds"))
+scTCR.im.prop_recalcd.TRB.list %>% names() %>% length() # [1] 11
+```
+
+# preprocess scTCR
+
+## TRB - convert colnames for GLIPHII
+
+```{r}
+scTCR.im.prop_recalcd.TRB.for_GLIPHII.list = list()
+for ( i in names(scTCR.im.prop_recalcd.TRB.list) ) {
+  
+  # i = names(scTCR.im.prop_recalcd.TRB.list)[1]; i
+  sample_name = i %>% gsub("_TCR_filtered_contig_annotations_TRB","",.); sample_name
+  # scTCR.im.prop_recalcd.TRB.list[[i]] # $Proportion %>% sum()
+  df = 
+    scTCR.im.prop_recalcd.TRB.list[[i]] %>% 
+    dplyr::rename("cloneCount"       ="Clones", 
+                  "cloneFraction"    ="Proportion", 
+                  "allVHitsWithScore"="V.name", 
+                  "allJHitsWithScore"="J.name", 
+                  "nSeqCDR3"         ="CDR3.nt", 
+                  "aaSeqCDR3"        ="CDR3.aa", 
+                  "Locus"            ="chain") %>% 
+    mutate(Patient_id = sample_name,
+           Locus = paste0("CLONES_", Locus),
+           Cycle = "Baseline") %>% 
+    dplyr::select(cloneCount, cloneFraction, allVHitsWithScore, allJHitsWithScore, nSeqCDR3, aaSeqCDR3, Locus, Patient_id, Cycle, Barcode)
+  scTCR.im.prop_recalcd.TRB.for_GLIPHII.list[[sample_name]] = df
+  
+}
+scTCR.im.prop_recalcd.TRB.for_GLIPHII.df = scTCR.im.prop_recalcd.TRB.for_GLIPHII.list %>% bind_rows()
+scTCR.im.prop_recalcd.TRB.for_GLIPHII.df$Patient_id %>% unique() %>% sort() # %>% length() # [1] 11
+scTCR.im.prop_recalcd.TRB.for_GLIPHII.df
+```
+
+# --------------------------------------------
+
+# GLIPHII inputGeneration
+
+## get patient TCR
+
+```{r}
+scTCR.im.prop_recalcd.TRB.for_GLIPHII.df %>% dim() # [1] 7193    10
+
+tumor =
+  # readr::read_csv(file.path(tumor_dir, tumor_fname)) %>%
+  scTCR.im.prop_recalcd.TRB.for_GLIPHII.df %>% 
+  
+  ## removes mixcr confidence score &and& collapse duplicates ( either from CapTCR mixcr score ;or; scTCR different FR )
+  mutate(TRBV = unlist(sapply(strsplit(allVHitsWithScore, split = "*", fixed = TRUE), function(x) x[[1]][1], simplify=FALSE)),
+         TRBJ = unlist(sapply(strsplit(allJHitsWithScore, split = "*", fixed = TRUE), function(x) x[[1]][1], simplify=FALSE))) %>%
+  dplyr::select(Patient_id, Cycle, 
+                Barcode,
+                aaSeqCDR3, TRBV, TRBJ) %>% # group_by_all() %>% filter(n()>1) %>% ungroup() %>% arrange(Patient_id, aaSeqCDR3)  ## check duplicates
+  distinct() %>%
+  
+  ## combine CDR3aa with different VJ usage &and& collapse duplicates
+  group_by(Patient_id, aaSeqCDR3) %>%
+  mutate(TRBV    = str_replace_all( paste(sort( unique (TRBV) ), collapse = "-or"),  "(?!^)TRBV", "" ),
+         TRBJ    = str_replace_all( paste(sort( unique (TRBJ) ), collapse = "-or"),  "(?!^)TRBJ", "" ),
+         Barcode = str_replace_all( paste(sort( unique (Barcode) ), collapse = "zzz"), "(?!^)Barcode", "") ## { not sure what (?!^) does, but it works }
+         ) %>% 
+  mutate(Barcode = Barcode %>% gsub("-1", "", .) %>% gsub(";", "zzz", .)) %>% ## { GLIPHII subject:condition does not like " " or ";" or "_" or "," }
+  
+  ungroup() %>% # group_by_all() %>% filter(n()>1) %>% ungroup() %>% arrange(Patient_id, aaSeqCDR3)  ## check duplicates
+  
+  distinct()
+tumor %>% dim() # [1] 7174    6
+tumor %>% head() %>% print.data.frame()
+#       Patient_id    Cycle       aaSeqCDR3     TRBV    TRBJ Barcode
+# 1 IRS-0004-A-003 Baseline    CSAQLGGTEAFF TRBV29-1 TRBJ1-1 1 TCGCGTTCATTAGCCA-1;GGACAAGTCGGCGCTA-1;TACGGTACAGGATTGG-1;CTTACCGTCTTGCATT-1...
+# 2 IRS-0004-A-003 Baseline CASSPHTYSYNEQFF    TRBV9 TRBJ2-1 ...
+# 3 IRS-0004-A-003 Baseline CASSYSSGGAYEQYF  TRBV7-2 TRBJ2-7 
+# ...
+tumor$Patient_id %>% unique() %>% sort()
+```
+
+```{r}
+n_counter = 1
+for (i in levels(as.factor(tumor$Patient_id))) {
+  
+  # i = levels(as.factor(tumor$Patient_id))[1]; i
+  temp = tumor %>% filter(Patient_id == i)
+  # temp
+  
+  united_df = 
+    lapply(levels (as.factor(temp$Cycle)), function(value) subset(temp, Cycle == value))%>% 
+    reduce(full_join, by=c("Patient_id",
+                           "aaSeqCDR3",
+                           "TRBV",
+                           "TRBJ")) %>% 
+    rowwise() %>% 
+    mutate(Timepoint = paste(sort( na.omit(c_across(starts_with('Cycle'))) ), collapse = "-")) 
+  # united_df
+  
+  if (n_counter == 1) {
+    comprehensive = united_df %>% dplyr::select(Patient_id, Timepoint, 
+                                                Barcode,
+                                                aaSeqCDR3,
+                                                TRBV,
+                                                TRBJ)
+    n_counter = n_counter + 1
+  } else {
+    comprehensive = rbind(comprehensive , united_df %>% dplyr::select(Patient_id, Timepoint, 
+                                                                      Barcode,
+                                                                      aaSeqCDR3,
+                                                                      TRBV,
+                                                                      TRBJ))
+  }
+  rm (temp , united_df)
+  
+}
+comprehensive %>% dim() # [1] 7174    6
+# comprehensive %>% head() %>% print.data.frame()
+#       Patient_id Timepoint       aaSeqCDR3     TRBV    TRBJ
+# 1 IRS-0004-A-003  Baseline    CSAQLGGTEAFF TRBV29-1 TRBJ1-1
+# 2 IRS-0004-A-003  Baseline CASSPHTYSYNEQFF    TRBV9 TRBJ2-1
+# 3 IRS-0004-A-003  Baseline CASSYSSGGAYEQYF  TRBV7-2 TRBJ2-7
+# ...
+## { identical to 'tumor' }
+```
+
+## join clinical data
+
+```{r}
+## PROJ == "IRIS"
+comprehensive.clin =
+  comprehensive %>% 
+  distinct() %>% 
+  left_join(., clin.df, by = c("Patient_id"="Patient_ID")) %>% # distinct(Patient_id, .keep_all = T)
+  
+  ## wrangle clinical data as COHORT:patient_timepoint_cohort_clin1_clin2_clin3 etc
+  mutate(`subject:condition` = 
+           paste( PROJ, (paste(Patient_id, Timepoint, COHORT, 
+                               Histology, ResistanceType, p16_IHC, PD_L1, TMB, MSI, TobaccoUse, BR1, PFS, OS, 
+                               # Barcode, ## GLIPHII web does not like it, attached after GLIPHII run
+                               sep = "_")), sep = ":"),
+         CDR3a = NA, ## for CDR3a|b later
+         count = 1) %>% 
+  dplyr::select(aaSeqCDR3, TRBV, TRBJ, CDR3a,
+                `subject:condition`,
+                count) %>%
+  rename(CDR3b = aaSeqCDR3)
+comprehensive.clin %>% dim() # [1] 7174    6
+comprehensive.clin %>% dplyr::filter(str_detect(`subject:condition`, "IRS-002")) %>% head() %>% print.data.frame()
+#                CDR3b     TRBV    TRBJ CDR3a                                                                    subject:condition count
+# 1     CASGRDRLGNTIYF TRBV12-5 TRBJ1-3    NA IRIS:IRS-002-A-001_Baseline_IRIS_SCCTongue_Acquired_NA_90_4_MSS_NoTobacco_PR_5.62_37     1
+# 2    CASRVKDRVSETQYF  TRBV6-2 TRBJ2-5    NA IRIS:IRS-002-A-001_Baseline_IRIS_SCCTongue_Acquired_NA_90_4_MSS_NoTobacco_PR_5.62_37     1
+# 3   CASSYKDRPSYNEQFF  TRBV6-2 TRBJ2-1    NA IRIS:IRS-002-A-001_Baseline_IRIS_SCCTongue_Acquired_NA_90_4_MSS_NoTobacco_PR_5.62_37     1
+# ...
+```
+
+## read in external specificities
+
+```{r}
+ext_spcf.vdjdb =
+  readr::read_tsv(file.path(dir.VDJdb, "VDJdb_MinimalScoreConfidence3_VersionII.tsv")) %>% # dim() # [1] 2366   10
+  # dplyr::filter(is.na(TRBV)) %>% dim() # [1] 295  10 { 295 did not have TRBV, GLIPHII needs TRBV ( J not necessary ) }
+  filter(!(is.na(TRBV))) %>%
+  mutate(TRBV = unlist(sapply(strsplit(TRBV, split = "*", fixed = TRUE), function(x) x[[1]][1], simplify=FALSE)),
+         TRBJ = unlist(sapply(strsplit(TRBJ, split = "*", fixed = TRUE), function(x) x[[1]][1], simplify=FALSE)),
+         CDR3a = NA,
+         count = 1) %>% # head() %>% print.data.frame()
+#   Locus            CDR3b     TRBV    TRBJ     MHC MHC class   Epitope Epitope gene Epitope species     Reference CDR3a count
+# 1   TRB      CASSQQETQYF TRBV12-3 TRBJ2-5    <NA>      <NA>      <NA>         <NA>             CEF PMID:35508657    NA     1
+# 2   TRB  CSARDHTGSAEKLFF TRBV20-1 TRBJ1-4    <NA>      <NA>      <NA>         <NA>             CEF PMID:35508657    NA     1
+# 3   TRB  CASSLQRGRTDTQYF TRBV11-2 TRBJ2-3 A*02:01      MHCI VLEETSVML          IE1             CMV PMID:23267020    NA     1
+# 4   TRB CASSLDSQSSGNTIYF  TRBV5-1 TRBJ1-3 A*02:01      MHCI VLEETSVML          IE1             CMV PMID:23267020    NA     1
+  
+  unite("pMHC",              c(`MHC class`, Epitope, `Epitope gene`), sep = "__") %>%  ## pMHC separted by "__"
+  unite("subject:condition", c(`Epitope species`, pMHC),              sep = ":") %>%   ## clin data separated by ":"
+  select(CDR3b, TRBV, TRBJ, CDR3a, `subject:condition`, count)
+# vdjdb_spcf %>% dim() # [1] 2071    6
+# vdjdb_spcf %>% head() %>% print.data.frame()
+#              CDR3b     TRBV    TRBJ CDR3a        subject:condition count
+# 1      CASSQQETQYF TRBV12-3 TRBJ2-5    NA           CEF:NA__NA__NA     1
+# 2  CSARDHTGSAEKLFF TRBV20-1 TRBJ1-4    NA           CEF:NA__NA__NA     1
+# 3  CASSLQRGRTDTQYF TRBV11-2 TRBJ2-3    NA CMV:MHCI__VLEETSVML__IE1     1
+# 4 CASSLDSQSSGNTIYF  TRBV5-1 TRBJ1-3    NA CMV:MHCI__VLEETSVML__IE1     1
+
+## already in GLIPHII format ( mdavis is GLIPHII author )
+ext_spcf.mdavis = readr::read_tsv(file.path(dir.VDJdb, "MarkDavis_TumorEnrichedTRB-CDR3.tsv"))
+# ext_spcf.mdavis %>% dim() # [1] 19596     6
+ext_spcf.mdavis
+
+ext_spcf = bind_rows(ext_spcf.vdjdb, ext_spcf.mdavis)
+# ext_spcf %>% dim() # [1] 21667     6
+ext_spcf
+```
+
+## combine patient + external
+
+```{r}
+spcf.patient_external = bind_rows(comprehensive.clin, ext_spcf)
+# spcf.patient_external %>% dim() # [1] 27388     6
+spcf.patient_external
+
+## double check subject:condition before writing out
+spcf.patient_external$`subject:condition` %>% str_subset(PROJ) %>% unique() %>% sort() %>% cat(., sep = "\n")
+# IRIS:IRS-0004-A-003_Baseline_IRIS_SSCOralcavity_Acquired_NA_50_4_MSS_NoTobacco_SD_2.99_27
+# IRIS:IRS-0008-P-008_Baseline_IRIS_SCCOropharynx_Primary_PosHPV_NA_NA_NA_YesTobacco_PD_2.79_10
+# IRIS:IRS-0014-P-014_Baseline_IRIS_SCCOralcavity_Primary_NA_80_8_MSS_NoTobacco_PD_1.81_9
+# IRIS:IRS-0015-A-015_Baseline_IRIS_SSCOralcavity_Acquired_NA_100_6_MSS_YesTobacco_SD/PR_9.9_18
+# IRIS:IRS-0023-P-023_Baseline_IRIS_SCCOralcavity_Primary_NA_90_3_MSS_NoTobacco_PD_4.21_14
+# IRIS:IRS-0025-A-025_Baseline_IRIS_SCCHypopharynx_Acquired_NegHPV_1_8_MSS_NoTobacco_SD_4.67_20
+# IRIS:IRS-0032-A-032_Baseline_IRIS_SCCOropharynx_Acquired_PosHPV_20_5_MSS_NoTobacco_SD_10.13_19
+# IRIS:IRS-0055-P-055_Baseline_IRIS_SCCOralcavity_Primary_NA_20_6.3_MSS_YesTobacco_SD_3.68_14
+# IRIS:IRS-0056-P-056_Baseline_IRIS_SCCOropharynx_Primary_PosHPV_NA_3.1_MSS_YesTobacco_SD_5.62_11
+# IRIS:IRS-0070-P-070_Baseline_IRIS_SSCOralcavity_Primary_NA_20_5.5_MSS_NoTobacco_PD_1.94_6
+```
+
+## write out input for GLIPHII
+
+```{r}
+write.table(spcf.patient_external, 
+            file.path(dir.out.data.gliphii, paste0(PROJ, ".GLIPHII_input.vdjdb_mdavis_noBarcode.txt")),
+            # file.path(dir.out.data.gliphii, paste0(PROJ, ".GLIPHII_input.vdjdb_mdavis_withBarcodes.txt")),
+            col.names = FALSE, row.names = FALSE, 
+            quote = FALSE,
+            sep = "\t" )
+```
+
+# run GLIPHI2 online
+
+- http://50.255.35.37:8080/
+- login: ming.han@uhn.ca
+- Project > New Project > 
+Project = IRIS_scTCR_run5
+Algorithm = GLIPH2
+Reference version = version 2.0
+Reference = CD48
+all_aa_interchangeable = YES
+TCR input file = "IRIS.GLIPHII_input.vdjdb_mdavis_withBarcodes.txt"
+HLA input file = none
+
+# --------------------------------------------
+
+# GLIPHII
+
+```{r}
+library(igraph)
+library(graphlayouts)
+```
+
+## read in GLIPHII input and wrangle
+
+```{r}
+## PROJ = "IRIS"
+
+# gliphii_output = readr::read_csv(file.path(dir.out.data.gliphii, "P10273_W2T3GKWE6F.csv"))
+gliphii_output = readr::read_csv(file.path(dir.out.data.gliphii, "P10294_XUM0ISK8HS.csv"))
+gliphii_output %>% dim() # [1] 44540    30
+gliphii_output
+
+# Patient_id, Timepoint, COHORT, Histology, ResistanceType, p16_IHC, PD_L1, TMB, MSI, TobaccoUse, BR1, PFS, OS, 
+gliphii_output$Sample %>% str_subset(PROJ) %>% .[10]
+# [1] "IRIS:IRS-0038-P-038_Baseline_IRIS_SCCOralcavity_Primary_NA_100_5_MSS_NoTobacco_PD_0.89_7"
+```
+
+```{r}
+gliph_out.parsed = 
+  gliphii_output %>% 
+  select(type, TcRb, V, pattern, Sample) %>% 
+    
+  ## filter OUT any "type" that doesn't have ANY patients
+  group_by(type) %>% 
+  filter(any( str_detect(pattern = PROJ, Sample) )) %>% 
+  ungroup() %>% # dim() # [1] 8888    5 { majority "type" won't have any patients in them }
+  
+  mutate(
+    
+    Source = unlist(sapply(strsplit(Sample, split = ":", fixed = TRUE), function(x) x[[1]][1], simplify=FALSE)), ## Source = Sample column, element 1 after ":" split
+    
+    Patient_id     = ifelse(grepl(PROJ, Sample), str_extract(Sample, "(?<=:).*?(?=_)"), "TBD"), ## Patient_id = Sample column, element btw ":" and first "_" ( external vdj == TBD )
+    Timepoint      = ifelse(grepl(PROJ, Sample), unlist(sapply(strsplit(Sample, split = "_", fixed = TRUE), function(x) x[2][1], simplify=FALSE)), "TBD"), ## Timepoint = Sample column, element 2 after "_" split
+    COHORT         = ifelse(grepl(PROJ, Sample), unlist(sapply(strsplit(Sample, split = "_", fixed = TRUE), function(x) x[3][1], simplify=FALSE)), "TBD"), ## COHORT    = Sample column, element 3 after "_" split
+    Histology      = ifelse(grepl(PROJ, Sample), unlist(sapply(strsplit(Sample, split = "_", fixed = TRUE), function(x) x[4][1], simplify=FALSE)), "TBD"), 
+    ResistanceType = ifelse(grepl(PROJ, Sample), unlist(sapply(strsplit(Sample, split = "_", fixed = TRUE), function(x) x[5][1], simplify=FALSE)), "TBD"), 
+    p16_IHC        = ifelse(grepl(PROJ, Sample), unlist(sapply(strsplit(Sample, split = "_", fixed = TRUE), function(x) x[6][1], simplify=FALSE)), "TBD"), 
+    PD_L1          = ifelse(grepl(PROJ, Sample), unlist(sapply(strsplit(Sample, split = "_", fixed = TRUE), function(x) x[7][1], simplify=FALSE)), "TBD"), 
+    TMB            = ifelse(grepl(PROJ, Sample), unlist(sapply(strsplit(Sample, split = "_", fixed = TRUE), function(x) x[8][1], simplify=FALSE)), "TBD"), 
+    MSI            = ifelse(grepl(PROJ, Sample), unlist(sapply(strsplit(Sample, split = "_", fixed = TRUE), function(x) x[9][1], simplify=FALSE)), "TBD"), 
+    TobaccoUse     = ifelse(grepl(PROJ, Sample), unlist(sapply(strsplit(Sample, split = "_", fixed = TRUE), function(x) x[10][1], simplify=FALSE)), "TBD"), 
+    BR1            = ifelse(grepl(PROJ, Sample), unlist(sapply(strsplit(Sample, split = "_", fixed = TRUE), function(x) x[11][1], simplify=FALSE)), "TBD"), 
+    PFS            = ifelse(grepl(PROJ, Sample), unlist(sapply(strsplit(Sample, split = "_", fixed = TRUE), function(x) x[12][1], simplify=FALSE)), "TBD"), 
+    OS             = ifelse(grepl(PROJ, Sample), unlist(sapply(strsplit(Sample, split = "_", fixed = TRUE), function(x) x[13][1], simplify=FALSE)), "TBD"), 
+    
+    ## Node combines TCB + "Sample"
+    Node = stringr::str_c(TcRb , "_" , Sample))
+
+gliph_out.parsed %>% dim() # [1] 11108   20
+gliph_out.parsed
+```
+
+## define node colors
+
+- patient nodes can be colored by any clinical metric
+- network graph will only care about whatever color you assign a node
+- { using cohort = "IRIS" for now }
+
+```{r}
+external_TCR_nodes.vec = gliph_out.parsed$Source %>% unique() %>% str_subset("IRIS", negate = T) %>% sort()
+external_TCR_nodes.vec %>% dput()
+# c("CEF", "CMV", "EBV", "HCV", "HomoSapiens", "HPV", "Influenza", 
+# "M.tuberculosis", "MCPyV", "MDavis", "S-pneumoniae")
+
+external_TCR_nodes.vec %>% cat(sep = "\n")
+
+color_shape_palette = 
+  data.frame(Parent_node = c(external_TCR_nodes.vec, "IRIS"),
+             Node_color = c(
+               "#C1A132", # "CEF",   
+               "#266D1F", # "CMV",
+               "#AC261B", # "EBV",
+               "#FFDF01", # "HCV",
+               "#FF9F01", # "HomoSapiens",
+               "#1A578F", # "HPV",
+               "#0C99BA", # "Influenza",
+               "#FFC86D", # "M.tuberculosis",
+               "#BAC70D", # "MCPyV",
+               "#CDEDFA", # "MDavis",
+               "#D07F89", # "S-pneumoniae",
+               "#255669"
+             ))
+color_shape_palette
+```
+
+## add node colors to parsed GLIPH output
+
+```{r}
+gliph_out.parsed.node_colored = 
+  gliph_out.parsed %>% 
+  left_join(., color_shape_palette, by=c("Source"="Parent_node"))
+gliph_out.parsed.node_colored %>% dim() # [1] 11108   21
+gliph_out.parsed.node_colored
+```
+
+## generate network - raw
+
+- edges == GLIPHII identified global and local specificity signatures 
+- (denoted as 'type' in GLIPHII outputs)
+
+```{r}
+specificity_signatures = unique(gliph_out.parsed.node_colored$type)
+specificity_signatures %>% length() # [1] 3037
+specificity_signatures
+
+rm(EDGES)
+n_count = 1
+for (sig in specificity_signatures) {
+  
+  # sig = specificity_signatures[1]; sig
+  
+  ## for a specific motif, get all nodes and their edges 
+  cdr3s = gliph_out.parsed.node_colored$Node[gliph_out.parsed.node_colored$type == sig]
+  # cdr3s %>% length() # [1] 41
+
+  ## no point processing cdr3s with length = 1
+  if (length(cdr3s) > 1) {
+    
+    if (n_count == 1) {
+      
+      EDGES = data.frame(t(combn(cdr3s, 2, simplify = TRUE)))  ## combn() = combination of elements from x, taken '2' at a time ( i.e. pairwise )
+      # EDGES %>% head() %>% print.data.frame()
+#                              X1                                  X2
+# 1 CASSYGGNTEAFF_MDavis:DRB11501 CASSIGGNTEAFF_MDavis:A0201_DRB11501
+# 2 CASSYGGNTEAFF_MDavis:DRB11501       XASSQGGNTEAFF_MDavis:DRB11501
+# 3 CASSYGGNTEAFF_MDavis:DRB11501 CSGSTGGNTEAFF_MDavis:A0201_DRB11501
+# ...
+      ## { ah, pairwise dataframe of nodes }
+      
+      n_count = n_count + 1
+      
+    } else { ## keeps on appending to dataframe
+      
+      edges = data.frame(t(combn(cdr3s , 2 , simplify = TRUE)))
+      EDGES = bind_rows(EDGES , edges)
+      
+    }
+  }
+}
+EDGES %>% dim() # [1] 32748     2
+EDGES
+```
+
+```{r}
+# gliph_out.parsed.node_colored %>% dim() # [1] 8888   21
+## do not include columns "pattern" and "Sample" below
+gliph_out.parsed.node_colored %>% names() %>% .[!. %in% c("pattern", "Sample")] %>% cat(., sep = ", ")
+
+## for each Node, collapse-paste all types together
+gliph_out.parsed.node_colored.type_collapse_pasted =
+  gliph_out.parsed.node_colored %>% 
+  group_by(Node) %>%
+  mutate(type = paste(sort( unique(type) ), collapse = ",")) %>%
+  distinct() %>% 
+  dplyr::select(Node,
+                type, TcRb, V, Source, Patient_id, Timepoint, COHORT, Histology, 
+                ResistanceType, p16_IHC, PD_L1, TMB, MSI, TobaccoUse, BR1, PFS, OS, 
+                Node_color) %>% 
+  distinct()
+gliph_out.parsed.node_colored.type_collapse_pasted %>% dim() # [1] 7651   19
+gliph_out.parsed.node_colored.type_collapse_pasted
+
+network = 
+  graph_from_data_frame(d = EDGES, 
+                        vertices = gliph_out.parsed.node_colored.type_collapse_pasted,
+                        directed = FALSE)
+# network
+# IGRAPH a53fb80 UN-B 6330 26866 -- 
+# + attr: name (v/c), Source (v/c), Patient_id (v/c), COHORT (v/c), Resistance (v/c), HPV (v/c), Smoking (v/c), TcRb (v/c), V (v/c), type (v/c), Node_color (v/c)
+# + edges from a53fb80 (vertex names):
+#  [1] CASSYGGNTEAFF_MDavis:DRB11501--CASSIGGNTEAFF_MDavis:A0201_DRB11501                                     CASSYGGNTEAFF_MDavis:DRB11501--XASSQGGNTEAFF_MDavis:DRB11501                                          
+#  [3] CASSYGGNTEAFF_MDavis:DRB11501--CSGSTGGNTEAFF_MDavis:A0201_DRB11501                                     CASSYGGNTEAFF_MDavis:DRB11501--CASSPGGNTEAFF_MDavis:DRB11501                                          
+# ...
+
+```
+
+## inspect network
+
+```{r}
+igraph::count_components(network) # [1] 846
+
+## access individual nodes
+network[[1]]$`CAISRGGNTEAFF_MDavis:DRB11501`
+network[[2]]$`CASSYGGNTEAFF_MDavis:DRB11501`
+```
+
+# network FILTERING
+
+## network trimming via clique id
+
+- filter out loosely connected nodes, increase precision downstream
+
+### round 1: filter by network size
+
+- network size == #of nodes
+- filter in only network size > 2
+
+### round 2: filter by node degree & transitivity
+
+- node degree
+    - eq #of associated edges
+    - reflect node's connectivity to other nodes
+- node transitivity
+    - range = 0 to 1
+    - { i.e. how connected are neighbouring nodes? }
+    - eq total #of edges among NEIGHBOURING nodes / total #of possible edges connecting those nodes
+    - value of 0 = none of immediate neighbouring nodes connected to each other
+    - value of 1 = neighbouring nodes cohesively connected, high degree of local clustering
+- filter OUT
+    - nodes with node-degree == 1
+    - nodes with node-transitivity == 0
+    - done with max_clique()
+        - clique == subgraph within a larger graph
+        - all nodes that do not form a clique with size n - excluded
+- result
+    - disconnected network, composed of multiple components with min size = 3
+
+```{r}
+## remove multi-edges first
+network.simplified = igraph::simplify(network)
+network.simplified %>% length() # [1] 7651 ## { same as raw 'network' }
+igraph::count_components(network.simplified) # [1] 846 ## { same as raw 'network' }
+
+MaxClique_collection = 
+  igraph::max_cliques(network.simplified, 
+                      # min = 3, # triangle
+                      min = 4,
+                      max = NULL)
+MaxClique_collection %>% length() # [1] 876
+MaxClique_collection[[1]] %>% length() # 4
+MaxClique_collection[[876]] %>% length() # 44
+
+network.subgraph = igraph::induced_subgraph(network, unlist(MaxClique_collection))
+network.subgraph %>% length() # [1] 4678
+igraph::count_components(network.subgraph) # [1] 206
+sort(unique(components(network.subgraph)$csize))
+```
+
+- subgraph = filtration by clique
+
+# --------------------------------------------
+
+# community detection
+
+- community detection within specificity components, for specificity annotation
+- ( i.e. communities == sub-structure within a graph )
+
+- densely connected 'components'
+    - { what's the definition of a component? a node? a sub-structure? }
+    - community count == 1
+    - "specificity of entire component -same as- specificity of external TCR within that network"
+        - { external TCR?? what about patient TCR?
+        -   oooh, you mean patient TCR clusters strongly associated with external TCR }
+    - e.g. cohesively connected component, 
+        - size 10, 
+        - contains an external TCR with validated specificity for an EBV antigen,
+        - but also 9 orphan TCRs { orphan TCRs = patient TCRs?? },
+        - whole component identified as potentially EBV specific
+- loosely connected 'components'
+    - have a modular community structure ( >1 community count )
+    - { probably not 1 specificity }
+    - specificity annotation require extra "community detection step"
+
+- community
+    - a sub-structure of a graph
+    - where a set of vertices exhibit
+        - stronger internal connections among themselves,
+        - weaker connections with other vertices
+- graph modularity
+    - metric that quantifies degree of community structure within a graph
+    - high modularity value
+        - stronger compartmentalization of graph into communities,
+        - dense connections within communities, sparse connections btw communities
+- modular components
+    - component first partitioned into its communities
+    - within community - potential specificity of orphan TCRs match(ed?) external TCR associated with it
+    - "hence, a component could yield multiple specificity annotations,
+        - corresponding to its constituent communities"
+        - { ah okay, community is the most specific level, with 1 annotation }
+
+## methods
+
+### cluster_walktrap() **
+
+- ( deterministic )
+- important to find ROBUST set of communities where network stats becomes best and stable,
+- try different #of steps, get network: edge_density, transitivity, modularity
+- Edge density
+    - higher the better
+- Transitivity
+    - range (0,1)
+    - value close to 1 indicate max transitivity --> good
+- Modularity 
+    - measures strength of division of a network into communities (modules,clusters)
+    - measures takes values from range <−1,1>
+    - value close to 1 indicates strong community structure --> good
+
+#### find optimal communities
+
+```{r}
+# steps.vec = c(10, 20, 50, 100, 500, 1000, 2000, 3000, 5000)
+steps.vec = seq(30, 150, 10); steps.vec %>% length()
+# steps.vec = seq(710, 790, 5); steps.vec %>% length()
+
+communities.walktrap.steps.list = list()
+for ( i in steps.vec ) {
+  
+  # i = 10
+  comm.wt.steps = igraph::cluster_walktrap(network.subgraph, steps = i)
+  communities.walktrap.steps.list[[paste0("steps_", i)]] = comm.wt.steps
+  
+}
+# communities.walktrap.steps.list[[1]]$membership %>% table() %>% as.data.frame()
+
+## check out stats for various walktrap.steps
+communities.walktrap.steps.vec = c()
+communities.walktrap.steps.membership_length.vec = c()
+communities.walktrap.steps.edge_density.vec = c()
+communities.walktrap.steps.transitivity.vec = c()
+communities.walktrap.steps.modularity.vec = c()
+
+for ( i in names(communities.walktrap.steps.list) ) {
+  
+  # i = names(communities.walktrap.steps.list)[1]; i
+  communities.walktrap.steps.vec = c(communities.walktrap.steps.vec, i)
+  communities.walktrap.steps.membership_length.vec = c(communities.walktrap.steps.membership_length.vec, communities.walktrap.steps.list[[i]]$membership %>% unique() %>% length())
+  
+  ## network.subgraph.comm_member ####################
+  community_method = paste0("community_walktrap_", i); community_method
+  communities = communities.walktrap.steps.list[[i]]
+  # communities$membership %>% unique() %>% length()
+  
+  network.subgraph.comm_member = 
+    set_vertex_attr(network.subgraph, 
+                    name = community_method, 
+                    value = communities$membership)
+  
+  ## get network stats ###############################
+  Abstract_Network = 
+    igraph::contract.vertices(graph = network.subgraph.comm_member,
+                              mapping = igraph::vertex_attr(graph = network.subgraph.comm_member, name = community_method))
+  
+  ## community density, modularity
+  ## if modularity < 0.3 --> good ( if closer to 0, the communities are all well defined )
+  ## if density close to 1 --> good
+  
+  Abstract_Network.edge_density = igraph::edge_density(graph = Abstract_Network); Abstract_Network.edge_density # [1] 0.3391602
+  communities.walktrap.steps.edge_density.vec = c(communities.walktrap.steps.edge_density.vec, Abstract_Network.edge_density)
+  
+  ## type = "globalundirected" for whole network
+  Abstract_Network.transitivity = igraph::transitivity(graph = Abstract_Network, type = "globalundirected"); Abstract_Network.transitivity # [1] 0.2454545
+  communities.walktrap.steps.transitivity.vec = c(communities.walktrap.steps.transitivity.vec, Abstract_Network.transitivity)
+  
+  Abstract_Network.modularity = igraph::modularity(x = Abstract_Network, membership = table(communities$membership)); Abstract_Network.modularity # [1] 0.9386629
+  communities.walktrap.steps.modularity.vec = c(communities.walktrap.steps.modularity.vec, Abstract_Network.modularity)
+  
+}
+communities.walktrap.steps.df = 
+  data.frame(Steps          = communities.walktrap.steps.vec,
+             Membership_len = communities.walktrap.steps.membership_length.vec,
+             edge_density   = communities.walktrap.steps.edge_density.vec,
+             transitivity   = communities.walktrap.steps.transitivity.vec,
+             modularity     = communities.walktrap.steps.modularity.vec)
+communities.walktrap.steps.df
+```
+
+### explore network stats
+
+```{r}
+## looks for walktrap.steps with best network stats
+communities.walktrap.steps.df %>% print.data.frame()
+#        Steps Membership_len edge_density transitivity modularity
+# 1   steps_30            289    0.7161909    0.2150538  0.9413971
+# 2   steps_40            289    0.7161909    0.2350746  0.9408482
+# 3   steps_50            285    0.7364715    0.1898734  0.9402660
+# 4   steps_60            283    0.7469363    0.2307692  0.9390631 <-- balance btw high edge_density, transitivity and modularity
+# 5   steps_70            285    0.7364715    0.2421525  0.9384401
+# 6   steps_80            287    0.7262250    0.2592593  0.9354301
+# 7   steps_90            292    0.7015252    0.2614108  0.9340246
+# 8  steps_100            292    0.7015252    0.2575107  0.9365994
+# 9  steps_110            294    0.6919969    0.2627737  0.9354914
+# 10 steps_120            299    0.6690086    0.2753165  0.9281920
+# 11 steps_130            298    0.6735137    0.3055556  0.9285578
+# 12 steps_140            299    0.6690086    0.3046154  0.9331397
+# 13 steps_150            299    0.6690086    0.3046154  0.9328973
+```
+
+## label network vertices
+
+```{r}
+# community_method = "EdgeBetwCommunity"
+# communities = communities.edgeBtwness
+# communities$membership %>% unique() %>% length()
+
+i = "steps_60"; i
+community_method = paste0("community_walktrap_", i); community_method
+communities = communities.walktrap.steps.list[[i]]
+communities$membership %>% unique() %>% length() # [1] 283
+
+network.subgraph.comm_member = 
+  set_vertex_attr(network.subgraph, 
+                  name = community_method, 
+                  value = communities$membership)
+network.subgraph.comm_member %>% length() # [1] 4678
+igraph::count_components(network.subgraph.comm_member) # [1] 206
+## { don't think it changes network size (#of components), 
+##   just labels vertices with community membership }
+
+network.subgraph.comm_member %>% 
+  saveRDS(., file.path( dir.out.data.gliphii, paste0(PROJ, ".GLIPHII_CumulativeCDR3Network_", community_method, ".rds") ))
+```
+
+## get NODE features
+
+- features = node degree + transivity
+
+```{r}
+# igraph::V() ## { get vertices }
+# igraph::V(network.subgraph.comm_member)$Source %>% length() # [1] 4783
+# igraph::V(network.subgraph.comm_member)$Source %>% head() # [1] "MDavis" "MDavis" "MDavis" "MDavis" "MDavis" "MDavis"
+
+## get dataframe for patient cohort
+Node_Features = 
+  tibble(Node = names(igraph::V(network.subgraph.comm_member)[igraph::V(network.subgraph.comm_member)$Source == "IRIS"]),
+         Node_degree = NA,
+         Node_transitivity = NA)
+Node_Features %>% dim() # [1] 803   3
+
+## get 'degree' and 'transivity'
+for ( i in c(1:nrow(Node_Features)) ) {
+  
+  Node_Features$Node_degree[i] = 
+    igraph::degree(network.subgraph.comm_member) [which(igraph::V(network.subgraph.comm_member)$name == Node_Features$Node[i])]
+  Node_Features$Node_transitivity[i] = 
+    igraph::transitivity(network.subgraph.comm_member, 
+                         type = "local",
+                         vids = which(igraph::V(network.subgraph.comm_member)$name == Node_Features$Node[i]))
+}
+Node_Features %>% dim() # [1] 803   3
+Node_Features %>% head(3) %>% print.data.frame()
+#                                                                                                         Node Node_degree Node_transitivity
+# 1     CASSPGGNTEAFF_IRIS:IRS-0038-P-038_Baseline_IRIS_SCCOralcavity_Primary_NA_100_5_MSS_NoTobacco_PD_0.89_7          67         0.5412040
+# 2 CASSLGGNTEAFF_IRIS:IRS-008-P-008_Baseline_IRIS_SCCOropharynx_Primary_PosHPV_NA_NA_NA_YesTobacco_PD_2.79_10          77         0.6033835
+# 3     CASSNGGNTEAFF_IRIS:IRS-0038-P-038_Baseline_IRIS_SCCOralcavity_Primary_NA_100_5_MSS_NoTobacco_PD_0.89_7          44         0.9545958
+
+Node_Features %>% dplyr::filter(Node_transitivity < 0.25) %>% nrow() # [1] 7
+## { only 7 nodes with low transitivity?? really highly connected... }
+
+Node_Features %>% write_csv(., file.path( dir.out.data.gliphii, paste0(PROJ, ".GLIPHII_CumulativeCDR3_Node_Features.csv") ))
+```
+
+# --------------------------------------------
+
+# get Abstract_Network
+
+- aka "super-node network"
+- merge vertices, for visualization
+- when you have 8k or 10k nodes it's hard to visualize every single node
+- convert nodes into 1 node
+
+```{r}
+## creates a new graph, by merging several vertices into one
+Abstract_Network = 
+  igraph::contract.vertices(graph = network.subgraph.comm_member,
+                            mapping = igraph::vertex_attr(graph = network.subgraph.comm_member, name = community_method))
+# Abstract_Network[[1]]
+
+Abstract_Network = 
+  igraph::set_vertex_attr(Abstract_Network, 
+                          name = paste0(community_method, "_size"), 
+                          value = table(communities$membership))
+# Abstract_Network %>% str()
+```
+
+## get GLIPHII_Community_stats
+
+- community level stats
+
+```{r warning=FALSE}
+gliph_out.parsed.node_colored %>% 
+  names() %>% .[!. %in% c("type", "TcRb", "V", "Source", "Patient_id", "pattern", "Sample", "Node", "Node_color")] %>% 
+  dput() # cat(., sep = ", ")
+c("Timepoint", "COHORT", 
+  "Histology", "ResistanceType", "p16_IHC", "PD_L1", "TMB", "MSI", "TobaccoUse", "BR1", "PFS", "OS")
+
+GLIPHII_Community_stats =
+  table(communities$membership) %>% 
+  as.data.frame() %>%
+  purrr::set_names(c("Community_id", "Community_size")) %>%
+  mutate(
+    Community_specificity = NA, 
+    
+    # Component_size = NA, 
+    # Component_density = NA, 
+    # Component_modularity = NA, 
+    
+    PatientDerived_Nodes = NA, 
+    Number_of_PatientDerived_Nodes = NA, 
+    Number_of_Patients = NA, 
+    KnownExternalTCRs = NA, 
+    
+    Timepoint = NA,
+    Cohort = NA,
+    clin1 = NA, clin2 = NA, clin4 = NA, clin5 = NA, clin6 = NA, clin7 = NA, clin8 = NA, clin9 = NA, clin10 = NA,
+    Number_of_Cohorts = NA,
+  )
+```
+
+```{r warning=FALSE}
+## PROJ = "IRIS"
+MDavis_PROJ = paste0("MDavis|", PROJ)
+# MDavis_PROJ
+
+for (comm_id in c(1:nrow(GLIPHII_Community_stats))) {
+
+  # comm_id = c(1:nrow(GLIPHII_Community_stats))[1]; comm_id
+  
+  ## grab community specificity
+  # communities[[comm_id]] [!grepl(PROJ, communities[[comm_id]])] %>% length() # cat(., sep = "\n")
+  # CASSYGGNTEAFF_MDavis:DRB11501
+  # CASSIGGNTEAFF_MDavis:A0201_DRB11501
+  # XASSQGGNTEAFF_MDavis:DRB11501
+  # ...
+  # [1] 250
+  # str_extract(unique( communities[[comm_id]] [!grepl(PROJ, communities[[comm_id]])] ), "(?<=_).*?(?=:)") %>% unique() %>% sort() %>% paste(., collapse = ",")
+  # [1] "CMV,EBV,HomoSapiens,MDavis"
+  GLIPHII_Community_stats$Community_specificity [comm_id] =
+    ifelse(sum(!grepl( PROJ, communities[[comm_id]] )) > 0,
+           paste(
+             sort(
+               unique(
+                 str_extract(
+                   unique(
+                     communities[[comm_id]] [!grepl(PROJ, communities[[comm_id]])]
+                   ), "(?<=_).*?(?=:)"))), collapse = ","), 
+           "Patient_intrinsic")
+  # [1] "CMV,EBV,HomoSapiens,MDavis"
+
+  
+  ## grab patient node names
+  # communities[[comm_id]] [grep(PROJ, communities[[comm_id]])] %>% unique() %>% sort() %>% paste(., collapse = ",")
+  # [1] "CACDRGMNTEAFF_IRIS:IRS-0056-P-056_Baseline_IRIS_primary_P16+_Yes_Smoking,
+  #      CASGLGQNTEAFF_IRIS:IRS-008-P-008_Baseline_IRIS_primary_P16+_Yes_Smoking,
+  #      CASSAQGGTEAFF_IRIS:IRS-0023-P-023_Baseline_IRIS_primary_unknown_No_Smoking...
+  GLIPHII_Community_stats$PatientDerived_Nodes [comm_id] =
+    ifelse(sum(grepl( PROJ, communities[[comm_id]] )) > 0 ,
+           paste(
+             sort(
+               unique(
+                 communities[[comm_id]] [grep(PROJ, communities[[comm_id]])]
+               )), collapse = ","), 
+           "TBD")
+
+  
+  ## grab number of patient nodes
+  # communities[[comm_id]] [grep(PROJ, communities[[comm_id]])] %>% unique() %>% length()
+  # [1] 28
+  GLIPHII_Community_stats$Number_of_PatientDerived_Nodes [comm_id] =
+    ifelse(sum(grepl( PROJ, communities[[comm_id]] )) > 0,
+           length(
+             unique(
+               communities[[comm_id]] [grep(PROJ, communities[[comm_id]])]
+             )),
+           0)
+  
+
+  ## grab number of patients
+  # str_extract(communities[[comm_id]] [grepl(PROJ, communities[[comm_id]])], "(?<=:).*?(?=_)") %>% unique() %>% length()
+  # [1] 8
+  GLIPHII_Community_stats$Number_of_Patients [comm_id] =
+    ifelse(sum(grepl( PROJ, communities[[comm_id]] )) > 0,
+           length(
+             unique(
+               str_extract(
+                 communities[[comm_id]] [grepl(PROJ, communities[[comm_id]])],
+                 "(?<=:).*?(?=_)")
+             )),
+           0)
+
+  ## grab vector of known external TCRs
+  # grep( MDavis_PROJ, communities[[comm_id]], value = TRUE, invert = TRUE ) %>% unique() %>% sort() %>% paste(., collapse = ",")
+  # [1] "CASSFQGFTEAFF_CMV:MHCI__NLVPMVATV__pp65,
+  #      CASSFQGYTEAFF_CMV:MHCI__NLVPMVATV__pp65,
+  #      CASSLFGGTEAFF_HomoSapiens:NA__NA__MAGE,
+  #      ...
+  GLIPHII_Community_stats$KnownExternalTCRs [comm_id] =
+    ifelse(sum(grep( MDavis_PROJ, communities[[comm_id]], invert = TRUE )) > 0,
+           paste(
+             sort(
+               unique(
+                 grep( MDavis_PROJ, communities[[comm_id]], value = TRUE, invert = TRUE )
+               )), collapse = ","), 
+           "TBD")
+  
+  
+  ## self defined clin parameters #################
+  PatientDerived_Nodes.df =
+    communities[[comm_id]] [grep(PROJ, communities[[comm_id]])] %>% as.data.frame() %>% 
+    dplyr::rename("PatientDerived_Nodes"=".") %>% 
+    distinct(PatientDerived_Nodes) %>% 
+    arrange(PatientDerived_Nodes) %>% 
+    separate(col = PatientDerived_Nodes, 
+             into = c("MOTIF_PROJ", "CLIN"), 
+             sep = ":", remove = T) %>% 
+    separate(col = CLIN, 
+             into = c("Patient_id", "Timepoint", "Cohort", 
+                      paste0("clin", seq(1,20))),   ## can auto accept up to 20 clin parameters
+             sep = "_", remove = T, extra = "merge", ) %>% 
+    # unite(col = "clin3", clin3, clin4, sep = "_", remove = T) %>%  ## messed up by including "_" in clin parameter, avoid "_" next time
+    purrr::discard(~all(is.na(.)))
+  # PatientDerived_Nodes.df
+  # PatientDerived_Nodes.df %>% head() %>% print.data.frame()
+  #           MOTIF_PROJ     Patient_id Timepoint Cohort   clin1   clin2       clin3
+  # 1 CACDRGMNTEAFF_IRIS IRS-0056-P-056  Baseline   IRIS primary    P16+ Yes_Smoking
+  # 2 CASGLGQNTEAFF_IRIS  IRS-008-P-008  Baseline   IRIS primary    P16+ Yes_Smoking
+  # 3 CASSAQGGTEAFF_IRIS IRS-0023-P-023  Baseline   IRIS primary unknown  No_Smoking
+  
+  GLIPHII_Community_stats$Timepoint [comm_id] =
+    ifelse(sum(grepl( PROJ, communities[[comm_id]] )) > 0,
+           PatientDerived_Nodes.df$Timepoint %>% unique() %>% sort() %>% paste(., collapse = ","),
+           "TBD")
+  # [1] "Baseline"
+
+  GLIPHII_Community_stats$Cohort [comm_id] =
+    ifelse(sum(grepl( PROJ, communities[[comm_id]] )) > 0,
+           PatientDerived_Nodes.df$Cohort %>% unique() %>% sort() %>% paste(., collapse = ","),
+           "TBD")
+  # [1] "IRIS"
+  
+  ## clins
+  GLIPHII_Community_stats$clin1 [comm_id]  = ifelse(sum(grepl( PROJ, communities[[comm_id]] )) > 0, PatientDerived_Nodes.df$clin1  %>% unique() %>% sort() %>% paste(., collapse = ","), "TBD")
+  GLIPHII_Community_stats$clin2 [comm_id]  = ifelse(sum(grepl( PROJ, communities[[comm_id]] )) > 0, PatientDerived_Nodes.df$clin2  %>% unique() %>% sort() %>% paste(., collapse = ","), "TBD")
+  GLIPHII_Community_stats$clin3 [comm_id]  = ifelse(sum(grepl( PROJ, communities[[comm_id]] )) > 0, PatientDerived_Nodes.df$clin3  %>% unique() %>% sort() %>% paste(., collapse = ","), "TBD")
+  GLIPHII_Community_stats$clin4 [comm_id]  = ifelse(sum(grepl( PROJ, communities[[comm_id]] )) > 0, PatientDerived_Nodes.df$clin4  %>% unique() %>% sort() %>% paste(., collapse = ","), "TBD")
+  GLIPHII_Community_stats$clin5 [comm_id]  = ifelse(sum(grepl( PROJ, communities[[comm_id]] )) > 0, PatientDerived_Nodes.df$clin5  %>% unique() %>% sort() %>% paste(., collapse = ","), "TBD")
+  GLIPHII_Community_stats$clin6 [comm_id]  = ifelse(sum(grepl( PROJ, communities[[comm_id]] )) > 0, PatientDerived_Nodes.df$clin6  %>% unique() %>% sort() %>% paste(., collapse = ","), "TBD")
+  GLIPHII_Community_stats$clin7 [comm_id]  = ifelse(sum(grepl( PROJ, communities[[comm_id]] )) > 0, PatientDerived_Nodes.df$clin7  %>% unique() %>% sort() %>% paste(., collapse = ","), "TBD")
+  GLIPHII_Community_stats$clin8 [comm_id]  = ifelse(sum(grepl( PROJ, communities[[comm_id]] )) > 0, PatientDerived_Nodes.df$clin8  %>% unique() %>% sort() %>% paste(., collapse = ","), "TBD")
+  GLIPHII_Community_stats$clin9 [comm_id]  = ifelse(sum(grepl( PROJ, communities[[comm_id]] )) > 0, PatientDerived_Nodes.df$clin9  %>% unique() %>% sort() %>% paste(., collapse = ","), "TBD")
+  GLIPHII_Community_stats$clin10 [comm_id] = ifelse(sum(grepl( PROJ, communities[[comm_id]] )) > 0, PatientDerived_Nodes.df$clin10 %>% unique() %>% sort() %>% paste(., collapse = ","), "TBD")
+
+  GLIPHII_Community_stats$Number_of_Cohorts [comm_id] =
+    ifelse(sum(grepl (PROJ , communities[[comm_id]])) > 0 ,
+           PatientDerived_Nodes.df$Cohort %>% unique() %>% length(),
+           0)
+
+}
+
+GLIPHII_Community_stats %>% arrange(desc(Community_size)) # %>% mutate(across(.cols = everything(), .fns = ~ substr(.x, 0, 15))) %>% head(3) %>% print.data.frame()
+GLIPHII_Community_stats$Community_specificity %>% unique() %>% sort() %>% length()
+# [1] 23
+GLIPHII_Community_stats$Community_specificity %>% unique() %>% sort() %>% cat(., sep = "\n")
+
+setdiff(GLIPHII_Community_stats$Community_specificity %>% unique(), 
+        c("Patient_intrinsic", "MDavis", "HomoSapiens,MDavis", "HomoSapiens", "EBV", "EBV,MDavis", "CEF,MDavis", "CMV,MDavis", "HCV", "HCV,MDavis", "HPV", "HPV,MDavis", "MCPyV,MDavis", "Influenza,MDavis", "MDavis,S-pneumoniae", "EBV,HCV,MDavis", "EBV,HCV,MCPyV,MDavis", "EBV,HCV,MDavis,S-pneumoniae", "EBV,HCV,HomoSapiens,MCPyV,MDavis", "EBV,HomoSapiens,HPV,MDavis", "EBV,HomoSapiens,MDavis", "EBV,HomoSapiens,MDavis,S-pneumoniae", "EBV,Influenza,MDavis", "EBV,MCPyV,MDavis", "HomoSapiens,HPV,MDavis", "HomoSapiens,MCPyV,MDavis", "CMV,EBV,HomoSapiens,MDavis", "CMV,HCV,HomoSapiens,HPV,MCPyV,MDavis,S-pneumoniae", "CMV,HCV,HomoSapiens,MDavis,S-pneumoniae", "CMV,HomoSapiens,MDavis"))
+```
+
+## get specificity_annotation
+
+- just run and fix "ERROR"
+
+```{r}
+specificity_annotation = 
+  data.frame(Community_specificity = GLIPHII_Community_stats$Community_specificity %>% unique()) %>% 
+  mutate(Annotations_Colour = case_when(
+    Community_specificity == "Patient_intrinsic"                                 ~ "Patient intrinsic:Patient intrinsic:#777777",
+    Community_specificity == "MDavis"                                            ~ "MDavis:MDavis:#CDEDFA",
+    Community_specificity == "HomoSapiens,MDavis"                                ~ "Human tumour and auto-antigens:Human tumour and auto-antigens:#FF9F01",
+    Community_specificity == "HomoSapiens"                                       ~ "Human tumour and auto-antigens:Human tumour and auto-antigens:#FF9F01",
+    # Community_specificity == "EBV"                                               ~ "EBV:Viral:#AC261B",
+    Community_specificity == "EBV,MDavis"                                        ~ "EBV:Viral:#AC261B",
+    Community_specificity == "CEF,MDavis"                                        ~ "CEF:Viral:#AC261B",
+    Community_specificity == "CMV,MDavis"                                        ~ "CMV:Viral:#AC261B",
+    Community_specificity == "HCV"                                               ~ "HCV:Viral:#AC261B",
+    Community_specificity == "HCV,MDavis"                                        ~ "HCV:Viral:#AC261B",
+    # Community_specificity == "HPV"                                               ~ "HPV:Viral:#AC261B",
+    Community_specificity == "HPV,MDavis"                                        ~ "HPV:Viral:#AC261B",
+    Community_specificity == "MCPyV,MDavis"                                      ~ "MCPyV:Viral:#AC261B",
+    # Community_specificity == "Influenza,MDavis"                                  ~ "Influenza:Other pathogens:#BAC70D",
+    Community_specificity == "MDavis,S-pneumoniae"                               ~ "S-Pneumoniae:Other pathogens:#BAC70D",
+    # Community_specificity == "EBV,HCV,MDavis"                                    ~ "Cross-reactive:Cross-reactive:#FFDF01",
+    # Community_specificity == "EBV,HCV,MCPyV,MDavis"                              ~ "Cross-reactive:Cross-reactive:#FFDF01",
+    # Community_specificity == "EBV,HCV,MDavis,S-pneumoniae"                       ~ "Cross-reactive:Cross-reactive:#FFDF01",
+    # Community_specificity == "EBV,HCV,HomoSapiens,MCPyV,MDavis"                  ~ "Cross-reactive:Cross-reactive:#FFDF01",
+    # Community_specificity == "EBV,HomoSapiens,HPV,MDavis"                        ~ "Cross-reactive:Cross-reactive:#FFDF01",
+    Community_specificity == "EBV,HomoSapiens,MDavis"                            ~ "Cross-reactive:Cross-reactive:#FFDF01",
+    # Community_specificity == "EBV,HomoSapiens,MDavis,S-pneumoniae"               ~ "Cross-reactive:Cross-reactive:#FFDF01",
+    Community_specificity == "EBV,Influenza,MDavis"                              ~ "Cross-reactive:Cross-reactive:#FFDF01",
+    # Community_specificity == "EBV,MCPyV,MDavis"                                  ~ "Cross-reactive:Cross-reactive:#FFDF01",
+    Community_specificity == "HomoSapiens,HPV,MDavis"                            ~ "Cross-reactive:Cross-reactive:#FFDF01",
+    Community_specificity == "HomoSapiens,MCPyV,MDavis"                          ~ "Cross-reactive:Cross-reactive:#FFDF01",
+    Community_specificity == "CMV,EBV,MDavis"                                    ~ "Cross-reactive:Cross-reactive:#FFDF01",
+    Community_specificity == "CMV,EBV,HomoSapiens,MDavis"                        ~ "Cross-reactive:Cross-reactive:#FFDF01",
+    Community_specificity == "CMV,EBV,HCV,MDavis,S-pneumoniae"                   ~ "Cross-reactive:Cross-reactive:#FFDF01",
+    Community_specificity == "CMV,HCV,HomoSapiens,HPV,MCPyV,MDavis,S-pneumoniae" ~ "Cross-reactive:Cross-reactive:#FFDF01",
+    # Community_specificity == "CMV,HCV,HomoSapiens,MDavis,S-pneumoniae"           ~ "Cross-reactive:Cross-reactive:#FFDF01",
+    # Community_specificity == "CMV,HomoSapiens,MDavis"                            ~ "Cross-reactive:Cross-reactive:#FFDF01",
+    Community_specificity == "CMV,Influenza,MDavis"                              ~ "Cross-reactive:Cross-reactive:#FFDF01",
+    Community_specificity == "HCV,HomoSapiens,MDavis"                            ~ "Cross-reactive:Cross-reactive:#FFDF01",
+    Community_specificity == "HCV,HomoSapiens,MCPyV,MDavis"                      ~ "Cross-reactive:Cross-reactive:#FFDF01",
+    TRUE ~ "ERROR")) %>% 
+  separate(., col = Annotations_Colour, into = c("Detailed_Annotation", "Abstract_Annotation", "Colour"), sep = ":", remove = T) %>% 
+  arrange(desc(Abstract_Annotation), desc(Detailed_Annotation))
+
+specificity_annotation %>% dim() # [1] 23  4
+specificity_annotation
+```
+
+## get GLIPHII_Community_stats.annot
+
+```{r}
+GLIPHII_Community_stats.annot = 
+  left_join(GLIPHII_Community_stats, 
+            specificity_annotation,
+            by = "Community_specificity" )
+GLIPHII_Community_stats.annot %>% dim() # [1] 283  23
+
+GLIPHII_Community_stats.annot %>% 
+  write_csv(., file.path( dir.out.data.gliphii, paste0(PROJ, ".GLIPHII_CDR3_", community_method, ".stats_and_specificity.csv") ))
+
+GLIPHII_Community_stats.annot %>% arrange(desc(Community_size))
+GLIPHII_Community_stats.annot %>% arrange(desc(Abstract_Annotation))
+```
+
+## set_vertex_attr()
+
+```{r}
+Abstract_Network = 
+  igraph::contract.vertices(graph = network.subgraph.comm_member,
+                            mapping = igraph::vertex_attr(graph = network.subgraph.comm_member, name = community_method))
+
+igraph::vertex_attr_names(graph = Abstract_Network) # [1] "name"
+
+# GLIPHII_Community_stats.annot %>% names() %>% dput()
+# c("Community_id", "Community_size", "Community_specificity", 
+# "PatientDerived_Nodes", "Number_of_PatientDerived_Nodes", "Number_of_Patients", 
+# "KnownExternalTCRs", "Timepoint", "Cohort", "clin1", "clin2", 
+# "clin3", "Number_of_Cohorts", "Detailed_Annotation", "Abstract_Annotation", 
+# "Colour")
+
+## general attr
+Abstract_Network = set_vertex_attr(Abstract_Network,
+                                   name = paste0(community_method, "_Size"),
+                                   value = table(communities$membership))
+
+Abstract_Network = set_vertex_attr(Abstract_Network,
+                                   name = paste0(community_method, "_Specificity"),
+                                   value = GLIPHII_Community_stats.annot$Community_specificity)
+
+Abstract_Network = set_vertex_attr(Abstract_Network,
+                                   name = paste0(community_method, "_DetailedSpecificityAnnotation"),
+                                   value = GLIPHII_Community_stats.annot$Detailed_Annotation)
+
+Abstract_Network = set_vertex_attr(Abstract_Network,
+                                   name = paste0(community_method, "_AbstractSpecificityAnnotation"),
+                                   value = GLIPHII_Community_stats.annot$Abstract_Annotation)
+
+Abstract_Network = set_vertex_attr(Abstract_Network,
+                                   name = "SuperNode_Colour",
+                                   value = GLIPHII_Community_stats.annot$Colour)
+
+Abstract_Network = set_vertex_attr(Abstract_Network,
+                                   name = "Number_of_Patients",
+                                   value = GLIPHII_Community_stats.annot$Number_of_Patients)
+
+Abstract_Network = set_vertex_attr(Abstract_Network,
+                                   name = "Number_of_PatientDerivedTCRs",
+                                   value = GLIPHII_Community_stats.annot$NumberOf_PatientDerived_Nodes)
+
+Abstract_Network = set_vertex_attr(Abstract_Network,
+                                   name = "NumberOfCohorts",
+                                   value = GLIPHII_Community_stats.annot$Number_of_Cohorts)
+
+## clinical parameters
+gliph_out.parsed.node_colored %>% 
+  names() %>% .[!. %in% c("Timepoint", "COHORT", "type", "TcRb", "V", "Source", "Patient_id", "pattern", "Sample", "Node", "Node_color")] %>% 
+  dput() # %>% length()
+# c("Histology", "ResistanceType", "p16_IHC", "PD_L1", "TMB", "MSI", "TobaccoUse", "BR1", "PFS", "OS")
+# [1] 10
+GLIPHII_Community_stats.annot %>% names() %>% str_subset("clin") %>% gtools::mixedsort()
+# [1] "clin1"  "clin2"  "clin3"  "clin4"  "clin5"  "clin6"  "clin7"  "clin8"  "clin9"  "clin10"
+Abstract_Network = set_vertex_attr(Abstract_Network, name = "Community_Histology",      value = GLIPHII_Community_stats.annot$clin1)
+Abstract_Network = set_vertex_attr(Abstract_Network, name = "Community_ResistanceType", value = GLIPHII_Community_stats.annot$clin2)
+Abstract_Network = set_vertex_attr(Abstract_Network, name = "Community_p16_IHC",        value = GLIPHII_Community_stats.annot$clin3)
+Abstract_Network = set_vertex_attr(Abstract_Network, name = "Community_PD_L1",          value = GLIPHII_Community_stats.annot$clin4)
+Abstract_Network = set_vertex_attr(Abstract_Network, name = "Community_TMB",            value = GLIPHII_Community_stats.annot$clin5)
+Abstract_Network = set_vertex_attr(Abstract_Network, name = "Community_MSI",            value = GLIPHII_Community_stats.annot$clin6)
+Abstract_Network = set_vertex_attr(Abstract_Network, name = "Community_TobaccoUse",     value = GLIPHII_Community_stats.annot$clin7)
+Abstract_Network = set_vertex_attr(Abstract_Network, name = "Community_BR1",            value = GLIPHII_Community_stats.annot$clin8)
+Abstract_Network = set_vertex_attr(Abstract_Network, name = "Community_PFS",            value = GLIPHII_Community_stats.annot$clin9)
+Abstract_Network = set_vertex_attr(Abstract_Network, name = "Community_OS",             value = GLIPHII_Community_stats.annot$clin10)
+
+igraph::vertex_attr_names(graph = Abstract_Network) %>% cat(., sep="\n")
+# name
+# community_walktrap_steps_60_Size
+# community_walktrap_steps_60_Specificity
+# community_walktrap_steps_60_DetailedSpecificityAnnotation
+# community_walktrap_steps_60_AbstractSpecificityAnnotation
+# SuperNode_Colour
+# Number_of_Patients
+# NumberOfCohorts
+# Community_Histology
+# Community_ResistanceType
+# Community_p16_IHC
+# Community_PD_L1
+# Community_TMB
+# Community_MSI
+# Community_TobaccoUse
+# Community_BR1
+# Community_PFS
+# Community_OS
+```
+
+# --------------------------------------------
+
+# visualize
+
+- specificity landscape
+
+```{r}
+grep("^layout_", ls("package:igraph"), value=TRUE)[-1]
+igraph::vertex_attr(graph = Abstract_Network, name = paste0(community_method, "_Size")) %>% length()
+```
+
+```{r}
+scaling_factor = 0.5
+
+png(filename = file.path(dir.out.data.gliphii, paste0(PROJ, ".GLIPHII_Cumulative_CDR3_", community_method, "_SpecificityLandscape_SuperNodes_v1.png")),
+    width = 20, height = 20, units = "in",
+    bg = "transparent",  res = 600 )
+
+set.seed(1234)
+plot(
+  simplify(Abstract_Network),
+
+  ## Adjust the size of the super-nodes
+  vertex.size = igraph::vertex_attr(graph = Abstract_Network, name = paste0(community_method, "_Size"))**scaling_factor, 
+  ## Color the super-nodes based on community
+  vertex.color = igraph::vertex_attr(graph = Abstract_Network, name = "SuperNode_Colour"), 
+  
+  ## { right now labeling only 'Viral' and 'Other pathogens' }
+  vertex.label = ifelse(igraph::vertex_attr(graph = Abstract_Network, name = paste0(community_method, "_AbstractSpecificityAnnotation")) %in% c("Viral", "Other pathogens"),
+                        igraph::vertex_attr(graph = Abstract_Network, name = paste0(community_method, "_DetailedSpecificityAnnotation")),
+                        ""
+  ), 
+  vertex.label.color = "#000000",
+  vertex.label.dist = ifelse(igraph::vertex_attr(graph = Abstract_Network, name = paste0(community_method, "_Size")) > 25, 1.7, 1
+  ), 
+  vertex.label.cex = 1.5,
+  vertex.label.degree = 75,
+  vertex.label.family = "Helvetica",
+  vertex.frame.color = "transparent", # Add a black border around the super-nodes,
+  vertex.shape = "circle", 
+  edge.width = 5, 
+  edge.color = "#000000",
+  rescale = FALSE,
+  
+  ## To get all the available layouts: 
+  ## grep("^layout_", ls("package:igraph"), value=TRUE)[-1]
+  layout = igraph::norm_coords(igraph::layout_with_fr(Abstract_Network),
+                               ymin = -0.8,
+                               ymax =  0.8,
+                               xmin = -0.8,
+                               xmax =  0.8)
+)
+
+set.seed(1234)
+plot(
+  simplify(Abstract_Network),
+  vertex.size = igraph::vertex_attr(graph = Abstract_Network, name = paste0(community_method, "_Size"))**scaling_factor,
+  vertex.color = "transparent",
+  vertex.label = igraph::vertex_attr(graph = Abstract_Network, name = paste0(community_method, "_Size")),
+  vertex.label.color = "#000000",
+  vertex.label.dist = 0,
+  vertex.label.cex = 1.2,
+  vertex.label.degree = 0,
+  vertex.label.family = "Helvetica",
+  vertex.frame.color = "transparent", # Add a black border around the super-nodes,
+  vertex.shape = "circle",
+  # edge.width = 5,
+  # edge.color = "#000000",
+  rescale = FALSE,
+  
+  layout = igraph::norm_coords(igraph::layout_with_fr(Abstract_Network),
+                               ymin = -0.8,
+                               ymax =  0.8,
+                               xmin = -0.8,
+                               xmax =  0.8)
+)
+
+legend(
+  # "bottom", #The location may also be specified by setting x to a single keyword from the list:
+  # xjust = 0.5,
+  y = -0.79, x = -0.9,
+  # "bottomright",, "bottomleft", "left", "topleft", "top", "topright", "right" and "center"
+  # inset = 10,   #The optional inset argument specifies how far the legend is inset from the plot margins.
+  
+  # If a single value is given, it is used for both margins; if two values are given, the first is used for x- distance, the second for y-distance.
+  legend = (specificity_annotation %>%
+              dplyr::select(Abstract_Annotation, Colour) %>%
+              unique())$Abstract_Annotation,
+  pch = 21,
+  col = "transparent",
+  pt.bg = (specificity_annotation %>%
+             dplyr::select(Abstract_Annotation, Colour) %>%
+             unique())$Colour,
+  pt.cex = 3,
+  cex = 2.5,
+  bty = "n",
+  ncol = 2,
+  text.width = 1.1
+)
+
+dev.off()
+```
+
+- hierarchy
+    - network > graphs > components? > communities
+    - components = disconnected subnetworks within one large total network
+
+# --------------------------------------------
+
+# get scTCR cell_ids
+
+```{r}
+GLIPHII_Community_stats.annot.withBarcodes.long =
+  GLIPHII_Community_stats.annot %>% 
+  dplyr::select(Community_id, Community_size, Community_specificity, PatientDerived_Nodes) %>% 
+  tidyr::separate_longer_delim(c(PatientDerived_Nodes), delim = ",") %>% 
+  separate(col = "PatientDerived_Nodes", into = c("subject", "condition"), sep=":", remove = T) %>% 
+  separate(col = "subject", into = c("CDR3aa", "COHORT"), sep = "_", remove = T) %>% 
+  separate(col = "condition", into = c("Sample_id", "clin_params"), sep = "_", remove = T, extra = "merge") %>% # distinct(subject, Sample_id, .keep_all = T)
+  left_join(., 
+            tumor,
+            by = c("CDR3aa"="aaSeqCDR3", "Sample_id"="Patient_id")) %>% 
+  tidyr::separate_longer_delim(c(Barcode), delim = "zzz") %>% 
+  dplyr::select(Community_id, Community_specificity, Sample_id, Barcode, TRBV, TRBJ, everything()) # %>% distinct(Barcode) %>% dim() # [1] 2024    1
+GLIPHII_Community_stats.annot.withBarcodes.long %>% dim() # [1] 2052   11
+GLIPHII_Community_stats.annot.withBarcodes.long
+```
+
+## deal with duplicate cells
+
+- cells expressing multiple TCRs
+
+```{r}
+GLIPHII_Community_stats.annot.withBarcodes.long.dedupd = 
+  GLIPHII_Community_stats.annot.withBarcodes.long %>% 
+  mutate(sample_barcode = paste0(Sample_id, "_", Barcode)) %>% # dplyr::pull(sample_barcode) %>% unique() %>% length()
+  # dplyr::filter(sample_barcode %in% sample_barcode[duplicated(sample_barcode)]) %>% 
+  # arrange(sample_barcode) %>% 
+  tidyr::separate_longer_delim(Community_specificity, delim = ",") %>% 
+  distinct(sample_barcode, Community_specificity, .keep_all = T) %>% 
+  group_by(sample_barcode) %>% 
+  summarize(Community_id = paste(unique(Community_id), collapse = ","),
+            Community_specificity = paste(Community_specificity, collapse = ","),
+            # Sample_id = Sample_id,
+            # Barcode = Barcode, 
+            TRBV = paste(unique(TRBV), collapse = ","),
+            TRBJ = paste(unique(TRBJ), collapse = ","),
+            CDR3aa = paste(unique(CDR3aa), collapse = ","),
+            clin_params = unique(clin_params))
+GLIPHII_Community_stats.annot.withBarcodes.long.dedupd %>% dim() # [1] 2046    7
+```
+
+## write_csv()
+
+```{r}
+GLIPHII_Community_stats.annot.withBarcodes.long.dedupd %>% write_csv(., file.path( dir.out.data.gliphii, paste0(PROJ, ".GLIPHII_CDR3_", community_method, ".stats_and_specificity.withBarcodes.long.dedupd.csv") ))
+```
+
+## get tumor associated
+
+```{r}
+GLIPHII_Community_stats.annot.withBarcodes.long.dedupd %>% 
+  dplyr::filter(Community_specificity %in% c("Patient_intrinsic", "MDavis", "HomoSapiens,MDavis", "HomoSapiens")) %>% 
+  separate(sample_barcode, into = c("Sample_id", "Barcode"), sep = "_") %>% 
+  dplyr::select(Sample_id, Community_specificity) %>% table()
+
+#                 Community_specificity
+# Sample_id        HomoSapiens HomoSapiens,MDavis MDavis Patient_intrinsic
+#   IRS-0004-A-003           0                  5     47                 0
+#   IRS-0014-P-014           0                  0      6                 0
+#   IRS-002-A-001            0                  5     94               119
+#   IRS-0023-P-023           1                 38    181                 0
+#   IRS-0025-A-025           0                  1      7                 0
+#   IRS-0032-A-032           0                 16      7                 0
+#   IRS-0038-P-038           0                 29     79                 0
+#   IRS-0055-P-055           1                 25    189                 0
+#   IRS-0056-P-056           0                  7     51                 0
+#   IRS-008-P-008            0                  2      8                 0
+#   IRS-015-A-015            0                213    138                 0
+```
+
+<br>
+
+# EOF
